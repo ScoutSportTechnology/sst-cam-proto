@@ -6,7 +6,7 @@ status: open
 kind: handoff
 related:
   - overlay-rendering.md
-  - docs/cross-repo/firmware/external/2026-06-08-gatt-uuids-and-overlay-semantics.md
+  - docs/cross-repo/firmware/inbound/2026-06-08-gatt-uuids-and-overlay-semantics.md
   - docs/plans/2026-06-07-001-feat-overlay-rendering-semantics-plan.md
 ---
 

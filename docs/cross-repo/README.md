@@ -35,7 +35,7 @@ change starts from fact, not guesswork.
   `proto/`, and the standing assumptions this repo makes about it.
 - **`coordination.md`** — the checklist for landing a contract change in that
   repo: what regenerates, what breaks, what must ship together.
-- **`external/`** — handoffs/questions that **came from** that repo or an
+- **`inbound/`** — handoffs/questions that **came from** that repo or an
   external session (inbound to this repo). The firmware-authored asks land here.
 - **`outbound/`** — handoffs this repo **sends to** that repo (authored here).
   Direction is also in each doc's `source_repo` / `target_repo` frontmatter.

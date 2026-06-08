@@ -3,7 +3,7 @@ title: "feat: Overlay rendering-semantics contract doc + guarantee reframe"
 type: feat
 status: completed
 date: 2026-06-07
-origin: docs/cross-repo/firmware/external/2026-06-08-gatt-uuids-and-overlay-semantics.md
+origin: docs/cross-repo/firmware/inbound/2026-06-08-gatt-uuids-and-overlay-semantics.md
 ---
 
 # feat: Overlay rendering-semantics contract doc + guarantee reframe
@@ -203,6 +203,6 @@ repo). This plan closes the overlay gap; the UUID swap is deferred.
 
 ## Sources & References
 
-- **Origin document:** [docs/cross-repo/firmware/external/2026-06-08-gatt-uuids-and-overlay-semantics.md](../cross-repo/firmware/external/2026-06-08-gatt-uuids-and-overlay-semantics.md)
+- **Origin document:** [docs/cross-repo/firmware/inbound/2026-06-08-gatt-uuids-and-overlay-semantics.md](../cross-repo/firmware/inbound/2026-06-08-gatt-uuids-and-overlay-semantics.md)
 - Related code: `bluetooth.proto` §11 (overlay layout system); `README.md` lines 7-9
 - Related docs: `docs/cross-repo/firmware/coordination.md`, `docs/cross-repo/app/coordination.md`
