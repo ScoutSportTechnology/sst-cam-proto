@@ -5,9 +5,15 @@
 > `sst-cam-app` and `sst-cam-firmware`.
 >
 > **Firmware developers:** the complete implementation contract — session lifecycle,
-> required commands, overlay rendering, file layout, and constraints — lives in
+> required commands, overlay *authoring*, file layout, and constraints — lives in
 > **`docs/firmware-spec.md`** in the **`sst-cam-app`** repo. This README is a
 > developer quick-reference for the proto wire format only.
+>
+> **Overlay rendering semantics** — the rules both stacks must render identically
+> (coordinate space, fonts/text layout, shapes, color/opacity, tolerance) — live
+> in **`overlay-rendering.md`** in *this* repo, since both consumers must match
+> them. (Split: rendering rules here; overlay authoring/UX in the app's
+> `firmware-spec.md`.)
 
 All control messages are encoded as Protocol Buffers (proto3). The app writes
 requests and reads responses over a two-characteristic GATT service for
@@ -122,6 +128,7 @@ copies disagreed on integer values — the wider match.proto set won) and
 | ---- | -------- |
 | `bluetooth.proto` | All BLE control schema: framing, `Command` / `CommandResponse` envelopes, telemetry, match events, recording / streaming, session push, WiFi Direct handshake |
 | `wifi.proto` | WiFi-only descriptors: RTSP preview stream descriptor, preview heartbeat |
+| `overlay-rendering.md` | Normative overlay rendering semantics both stacks must match: coordinate space, text layout, shapes, color/opacity, tolerance + reference fixtures (companion to `bluetooth.proto` §11) |
 
 **Regenerating Dart bindings:** run `just gen-proto` inside the devcontainer.
 Requires `protoc` and `protoc_plugin 21.1.2` (pinned to match `protobuf: 3.1.0`).

@@ -38,6 +38,7 @@ field's meaning.
 | WiFi Direct handshake | Group-owner bring-up, `WifiDirectGroupResponse` credentials |
 | RTSP descriptor | Stream server at `:8554/preview` |
 | Advertising / device-info fields | BLE advert payload + `sst-cam-NNNN` naming |
+| Overlay rendering (`bluetooth.proto` §11) | Renderer must conform to `overlay-rendering.md` (this repo) within tolerance; re-validate against the reference fixtures |
 | Behavior change | The behavior spec is `docs/firmware-spec.md` in the **app** repo — update it there |
 
 ## Verify
