@@ -35,6 +35,7 @@ field's meaning.
 | Telemetry / thumbnail messages | Polling layer + decode/render |
 | WiFi Direct handshake | `StartWifiDirectCommand` flow, RTSP connect |
 | Any enum | switch/case over that enum |
+| Overlay rendering (`bluetooth.proto` §11) | Flutter overlay renderer must conform to `overlay-rendering.md` (this repo) within tolerance; re-validate against the reference fixtures |
 | Behavior, not just shape | Update `docs/firmware-spec.md` in the app repo |
 
 ## Verify

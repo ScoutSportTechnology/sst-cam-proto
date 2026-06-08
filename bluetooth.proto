@@ -394,8 +394,10 @@ message WifiDirectGroupResponse {
 //
 // The app is the only source of overlay design. The camera never hard-codes
 // scoreboard layouts, fonts, or colors — it renders exactly what the layout
-// spec describes. This guarantees pixel-accurate sync between the app's
-// in-session preview and the camera's live stream + recorded footage.
+// spec describes. The app preview and the camera's live stream + recorded
+// footage stay visually equivalent within a defined tolerance (the two stacks
+// use independent rasterizers, so byte-identical output is not the goal). The
+// normative rendering rules and tolerance live in overlay-rendering.md.
 //
 // Design flow:
 //   1. App sends PushOverlayLayoutCommand (after PushSessionConfigCommand,
