@@ -208,7 +208,7 @@ message ThumbnailRequest {
 
 message ThumbnailResponse {
   bytes  jpeg_bytes        = 1;
-  uint64 capture_timestamp = 2;
+  uint64 capture_timestamp = 2;  // Unix epoch milliseconds (wall clock).
 }
 
 // ===========================================================================
@@ -280,7 +280,7 @@ message MatchState {
   uint32      score_b          = 5;
   string      team_a_id        = 6;
   string      team_b_id        = 7;
-  uint64      updated_at       = 8;
+  uint64      updated_at       = 8;  // Unix epoch milliseconds (wall clock).
 }
 
 enum MatchStatus {
