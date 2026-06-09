@@ -40,10 +40,11 @@ superseded by this section.
 - Origin `(0,0)` is **top-left**. `x` increases right; `y` increases down.
 - `OverlayRect` is an axis-aligned box: `(x1,y1)` top-left, `(x2,y2)` bottom-right,
   with `x2 ≥ x1` and `y2 ≥ y1`. Width = `x2−x1`, height = `y2−y1`.
-- A renderer maps the logical canvas onto its output surface (camera output
-  resolution, or app preview surface) with a **uniform scale** that preserves
-  aspect ratio. Both stacks use the same canvas spec, so the same layout produces
-  the same composition at any output resolution.
+- A renderer MUST map the logical canvas onto its output surface (camera output
+  resolution, or app preview surface) using a **single uniform scale factor** that
+  preserves aspect ratio. Non-uniform x/y scaling is **non-conformant**. Both
+  stacks use the same canvas spec, so the same layout produces the same
+  composition at any output resolution.
 - **Every length** — `font_size`, `corner_radius`, and all `OverlayRect` edges —
   is in canvas pixels and scales by the same factor as the canvas. No field is in
   output/device pixels.
@@ -70,9 +71,9 @@ persistent elements at the same `z`.
 | `SHAPE_CIRCLE` | Ellipse **inscribed in `bounds`** (center = box center, radii = half width/height). A square `bounds` yields a circle. |
 | `SHAPE_UNKNOWN` | Must not be rendered; renderers skip the element. |
 
-`fill_color` fills `SHAPE_RECT` and `SHAPE_CIRCLE`. For `SHAPE_TEXT`, `fill_color`
-(when non-empty) paints the text's background box (`bounds`); `text_color` paints
-the glyphs.
+`fill_color` fills `SHAPE_RECT` and `SHAPE_CIRCLE`. For `SHAPE_TEXT`, a non-empty
+`fill_color` **MUST** paint the text's background box (`bounds`) behind the glyphs;
+`text_color` paints the glyphs.
 
 ---
 
@@ -87,16 +88,16 @@ the glyphs.
   is best-effort.
 - **`font_weight`** (`FontWeight`) maps to the nearest available weight of the
   chosen family (e.g. `NORMAL` → 400, `BOLD` → 700).
-- **Baseline & line height:** the first line's baseline sits one ascent below the
-  top of `bounds`. Line advance (leading) is the font's natural line height for
-  `font_size`; renderers SHOULD NOT add extra leading.
+- **Baseline & line height:** the first line's baseline **MUST** sit one ascent
+  below the top of `bounds`. Line advance (leading) is the font's natural line
+  height for `font_size`; renderers SHOULD NOT add extra leading.
 - **Horizontal alignment** (`text_align`): `LEFT` / `CENTER` / `RIGHT` align each
   line within the `bounds` width.
 - **Vertical alignment:** text block is **top-aligned** within `bounds`.
 - **Wrapping:** `SHAPE_TEXT` wraps on word boundaries at the `bounds` width. A
   single word wider than `bounds` is **not** broken mid-word; it overflows the
-  right edge. Text exceeding the `bounds` height is **clipped** to `bounds`
-  (no shrink-to-fit, no scroll).
+  right edge. Text exceeding the `bounds` height **MUST** be **clipped** to
+  `bounds` (no shrink-to-fit, no scroll).
 - **Substitution:** `{{param}}` placeholders in `static_text` (template elements)
   are substituted from `BannerEventCommand.params` *before* layout/wrapping.
   Bound text (`OverlayBinding`) is resolved to its current value before layout.
