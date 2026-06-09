@@ -110,8 +110,13 @@ than the negotiated MTU. The `correlation_id` links chunks to their request.
 Single-chunk messages set `chunk_index = 0` and `total_chunks = 1`.
 
 **Thumbnail note:** Target ≤ 160×90 JPEG at quality 60 (~4–8 KB).
-At 500-byte chunks ≈ 10–20 writes. Firmware should not send the next chunk
-until the app acknowledges with a `ChunkAck` write (flow control).
+At 500-byte chunks ≈ 10–20 writes.
+
+**Flow control (symmetric):** The receiver — *either* side — acknowledges each
+received chunk with a `ChunkAck` write keyed by `correlation_id` + `chunk_index`,
+and the sender MUST withhold the next chunk until that ack arrives. This applies
+in **both** directions: app→camera command chunks and camera→app response chunks.
+`ChunkAck` has no direction field by design — it is symmetric.
 
 ---
 
