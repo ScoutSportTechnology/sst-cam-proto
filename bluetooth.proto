@@ -35,6 +35,9 @@ package sst_cam;
 //     * MatchControlCommand gained period field; MatchControlAction redesigned.
 //     * DeviceTelemetry gained battery_level_pct.
 //     * PushSessionConfigCommand gained team name/color fields.
+//     * OverlayElement.visible and OverlayStyle.opacity made proto3 `optional`
+//       so consumers detect unset via has_*() and apply documented defaults
+//       (visible=>true, opacity=>1.0). Wire-compatible; no protocol_version bump.
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -443,7 +446,8 @@ message OverlayElement {
   OverlayRect    bounds  = 3;
   OverlayStyle   style   = 4;
   OverlayBinding binding = 5;  // for TEXT shapes: live data source; default BINDING_STATIC
-  bool           visible = 6;  // default true; false = defined but initially hidden
+  optional bool  visible = 6;  // optional: absent => true (renders). See
+                              // overlay-rendering.md "Element defaults".
 }
 
 // Position and layer of an element in canvas space.
@@ -459,7 +463,8 @@ message OverlayRect {
 message OverlayStyle {
   string     fill_color    = 1;  // hex e.g. "#1A1A1A"; empty = transparent
   string     text_color    = 2;  // hex; for TEXT shapes
-  float      opacity       = 3;  // 0.0–1.0; default 1.0
+  optional float opacity    = 3;  // 0.0–1.0; optional: absent => 1.0 (opaque).
+                                  // See overlay-rendering.md "Element defaults".
   float      corner_radius = 4;  // canvas pixels; 0 = sharp corners
   string     font_family   = 5;  // e.g. "monospace"; firmware uses nearest available
   float      font_size     = 6;  // canvas pixels
