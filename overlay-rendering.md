@@ -25,8 +25,8 @@ is not the contract.
 The contract is **perceptual equivalence within a defined tolerance**: a viewer
 comparing the app preview and the camera output side by side sees the same
 overlay — same layout, same text, same colors — with only sub-perceptual
-rasterization differences. Conformance is checked against the shared reference
-fixtures (see [Conformance](#conformance-tolerance--reference-fixtures)).
+rasterization differences. Conformance is the two stacks' own outputs compared
+within tolerance (see [Conformance](#conformance-tolerance)).
 
 Any earlier "pixel-accurate" wording (e.g. in `bluetooth.proto` comments) is
 superseded by this section.
@@ -115,29 +115,29 @@ the glyphs.
 
 ---
 
-## Conformance: tolerance & reference fixtures
+## Conformance: tolerance
 
-Conformance is validated against **shared reference fixtures** stored in the
-contract repo. Each fixture is:
+There is **no canonical / golden reference image**. The geometry is simple shapes
+at explicit x/y coordinates; this document plus the tolerance values below are the
+full contract. Each stack renders an `OverlayLayout` independently and is expected
+to stay within tolerance by following the spec — no reference PNG is generated,
+stored, or validated against.
 
-- an input `OverlayLayout` (textproto/JSON form), plus the event/binding values
-  needed to populate it, and
-- a **reference rendering** (PNG) at a stated output resolution.
-
-A renderer conforms when, for every fixture, its output meets **all** of:
+Conformance is defined as a **side-by-side comparison of the two stacks' own
+output** for the same input `OverlayLayout` (plus the event/binding values needed
+to populate it). The app preview and the camera output, at a matched output
+resolution, must meet **all** of:
 
 | Aspect | Tolerance |
 | ------ | --------- |
-| **Geometry** (non-text element edges, after scaling) | within **±2 canvas px** of the reference |
+| **Geometry** (non-text element edges, after scaling) | within **±2 canvas px** between the two stacks |
 | **Color** (solid fill / text color regions) | per-channel sRGB delta **≤ 4 / 255** |
 | **Overall structural similarity** (full frame) | **SSIM ≥ 0.98** |
 | **Text regions** (bounding box of each `SHAPE_TEXT`) | **SSIM ≥ 0.95** — looser, to absorb rasterizer/hinting differences |
 
 These thresholds are the working contract; they may be tightened or relaxed by a
 coordinated change to this document (see below) once both stacks report real
-fixture results. The reference PNGs are produced and maintained by the consuming
-repos against this spec; this document defines the rules and the tolerance they
-are measured against.
+results.
 
 ---
 
