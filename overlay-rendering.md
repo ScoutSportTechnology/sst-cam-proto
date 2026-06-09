@@ -146,5 +146,5 @@ results.
 This document is consumed via the `proto/` submodule, pinned to the same commit in
 every consumer. A change to these rules or tolerances is a coordinated change: bump
 each consumer's submodule to the new commit in lockstep, and re-validate against
-the fixtures. See `docs/cross-repo/app/coordination.md` and
-`docs/cross-repo/firmware/coordination.md`.
+the fixtures. Coordinate the lockstep bump across consumers from the workspace
+root.
