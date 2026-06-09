@@ -113,6 +113,22 @@ the glyphs.
 - `corner_radius` is in canvas pixels; `0` = sharp corners. A value larger than
   half the smaller side of `bounds` is clamped to that half (capsule/circle limit).
 
+### Element defaults
+
+`OverlayElement.visible` and `OverlayStyle.opacity` are declared `optional` in
+`bluetooth.proto` (proto3 `optional`) so a consumer can detect "unset" via the
+generated `has_*()` accessor. When a field is **absent**, the renderer MUST apply
+the documented default:
+
+- absent `visible` → **true** (the element renders).
+- absent `opacity` → **1.0** (fully opaque).
+
+Senders SHOULD set `visible` and `opacity` explicitly whenever the value is not
+the default, rather than relying on proto3 scalar zero-values (`false` / `0.0`),
+which would otherwise invert the intended meaning (hidden / fully transparent).
+This rule is the contract-level fix for the default-inversion divergence; see the
+`optional` field comments in `bluetooth.proto`.
+
 ---
 
 ## Conformance: tolerance
