@@ -159,7 +159,10 @@ message DeviceInfoResponse {
   string name             = 2;
   string firmware_version = 3;
   string model            = 4;
-  uint32 protocol_version = 5;
+  uint32 protocol_version = 5;  // consumers MUST read this and compare against the
+                                // contract version they were built against; on
+                                // mismatch, surface a clean version-skew error and
+                                // refuse the session — do NOT silently proceed.
 }
 
 message DeviceTelemetry {
@@ -401,6 +404,12 @@ message WifiDirectGroupResponse {
 // footage stay visually equivalent within a defined tolerance (the two stacks
 // use independent rasterizers, so byte-identical output is not the goal). The
 // normative rendering rules and tolerance live in overlay-rendering.md.
+//
+// Command ordering (session bring-up): the app MUST issue these in order —
+//   StartWifiDirectCommand -> PushSessionConfigCommand -> PushOverlayLayoutCommand
+//   -> RecordingControlCommand. Rationale: PushSessionConfigCommand provisions the
+//   streaming sinks (RTMP / preview), which require the WiFi-Direct group already
+//   up; sending session config before the group exists fails to bind the sinks.
 //
 // Design flow:
 //   1. App sends PushOverlayLayoutCommand (after PushSessionConfigCommand,
