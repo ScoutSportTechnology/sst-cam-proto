@@ -190,7 +190,9 @@ message DeviceTelemetry {
   bool is_recording = 11;
   bool is_streaming = 12;
 
-  uint32 battery_level_pct = 13;
+  // optional so an absent value (device has no battery) is distinguishable from
+  // a real 0% reading via has_battery_level_pct().
+  optional uint32 battery_level_pct = 13;
 }
 
 enum WifiState {
