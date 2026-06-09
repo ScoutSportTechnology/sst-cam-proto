@@ -60,6 +60,14 @@ message ChunkedPayload {
 message ChunkAck {
   string correlation_id = 1;
   uint32 chunk_index    = 2;
+
+  // Wire demux convention: an ack is sent as a ChunkedPayload-shaped frame with
+  // total_chunks (field 3) absent — it decodes to 0. A receiver distinguishes an
+  // ack from a real ChunkedPayload by total_chunks == 0 (a real payload always
+  // carries total_chunks >= 1). Field 3 is reserved here so a future ChunkAck
+  // field cannot collide with that sentinel and silently break the cross-stack
+  // demux on either side.
+  reserved 3;
 }
 
 // ===========================================================================
