@@ -141,6 +141,17 @@ Install: `sudo apt-get install protobuf-compiler && dart pub global activate pro
 
 ---
 
+## Documented solutions
+
+`docs/solutions/` — documented solutions to past problems (contract-evolution
+learnings, cross-stack drift, workflow patterns), organized by category with
+YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when amending the
+wire contract or debugging app↔firmware divergence — e.g. the proto3
+`optional`-and-documented-default pattern for expressing intent on shared
+scalars.
+
+---
+
 ## Versioning
 
 - Use `reserved` to tombstone removed field numbers so they are never reused.
