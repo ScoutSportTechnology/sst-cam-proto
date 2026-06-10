@@ -38,6 +38,10 @@ package sst_cam;
 //     * OverlayElement.visible and OverlayStyle.opacity made proto3 `optional`
 //       so consumers detect unset via has_*() and apply documented defaults
 //       (visible=>true, opacity=>1.0). Wire-compatible; no protocol_version bump.
+//     * Raw dual-camera capture: RawCaptureControlCommand (Command oneof 34),
+//       RecordingMetadata.is_raw/camera_index/capture_group_id (8-10) under a
+//       joint presence invariant, DeviceTelemetry.is_raw_capturing (14). All
+//       additive `optional`; no protocol_version bump.
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -91,6 +95,7 @@ message Command {
     StreamingControlCommand  streaming_control  = 31;
     ListRecordingsCommand    list_recordings    = 32;
     DownloadRequestCommand   download_request   = 33;
+    RawCaptureControlCommand raw_capture        = 34;
 
     SetWifiConfigCommand      set_wifi_config      = 40;
     SetStreamingConfigCommand set_streaming_config = 41;
@@ -193,6 +198,11 @@ message DeviceTelemetry {
   // optional so an absent value (device has no battery) is distinguishable from
   // a real 0% reading via has_battery_level_pct().
   optional uint32 battery_level_pct = 13;
+
+  // Raw dual-camera capture running state, mirroring is_recording /
+  // is_streaming. absent ⇒ false. Reflects RawCaptureControlCommand lifecycle,
+  // independent of is_recording.
+  optional bool is_raw_capturing = 14;
 }
 
 enum WifiState {
@@ -302,6 +312,35 @@ message RecordingControlCommand {
   RecordingAction action = 1;
 }
 
+// Independent raw dual-camera training capture, distinct from
+// RecordingControlCommand. "RAW_DUAL" = both physical sensors captured raw in
+// one session, yielding two per-camera files (camera_index 0 and 1) paired by
+// a shared capture_group_id. Runs concurrently with final-match recording
+// (recording_control) and streaming (streaming_control) — its lifecycle does
+// not touch is_recording.
+//
+// Reuses RecordingAction but only RECORDING_START / RECORDING_STOP are honored.
+// `action` is proto3 `optional` so firmware can distinguish a genuinely unset
+// field (has_action()==false) from an explicit value. The app MUST always set
+// it; firmware behavior (not this contract) answers an absent `action` or the
+// zero-value RECORDING_ACTION_UNKNOWN, plus PAUSE / RESUME, with UNSUPPORTED /
+// ERROR — it must NEVER treat absent/UNKNOWN as START.
+//
+// capture_group_id is minted by the APP and sent on START; firmware stamps it
+// onto both per-camera files' RecordingMetadata (see RecordingMetadata fields
+// 8–10). The app MUST set it on RECORDING_START and firmware MUST reject a
+// START lacking it; it MUST be absent on RECORDING_STOP and firmware MUST
+// ignore it there. Treat it as an OPAQUE string: firmware MUST stamp it onto
+// both files verbatim — no inspection, truncation, or re-encoding (UUID v4
+// recommended; compared only by equality). This is the app-as-source-of-truth
+// pairing key, so the response stays status-only (no payload) — like
+// RecordingControlCommand, this is NOT in the CommandResponse payload oneof.
+// The app already knows the id it minted, so no payload is needed to learn it.
+message RawCaptureControlCommand {
+  optional RecordingAction action = 1;
+  optional string capture_group_id = 2;
+}
+
 enum RecordingAction {
   RECORDING_ACTION_UNKNOWN = 0;
   RECORDING_START          = 1;
@@ -329,6 +368,24 @@ message RecordingMetadata {
   string sport        = 5;
   string teams        = 6;
   string thumbnail_id = 7;
+
+  // Raw dual-camera capture identity (see RawCaptureControlCommand). Absent on
+  // a final-match recording. JOINT INVARIANT: when is_raw == true, BOTH
+  // camera_index and capture_group_id MUST be present; when is_raw is
+  // absent/false, BOTH MUST be absent. A consumer MUST treat a raw file lacking
+  // either as malformed.
+  //
+  // is_raw: absent ⇒ false ⇒ final recording.
+  optional bool   is_raw           = 8;
+  // camera_index: IDENTITY KEY, 0/1, pinned to the physical nvarguscamerasrc
+  // sensor-id (0 = primary sensor, 1 = secondary). Same referent on both
+  // stacks — front/back must NOT be assumed oppositely. Meaningful only when
+  // is_raw == true.
+  optional uint32 camera_index     = 9;
+  // capture_group_id: pairs the cam-0 / cam-1 files of one raw session. Equals
+  // the app-minted id sent on RawCaptureControlCommand START. Absent for final
+  // recordings.
+  optional string capture_group_id = 10;
 }
 
 message RecordingListResponse {
