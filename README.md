@@ -20,6 +20,39 @@ requests and reads responses over a two-characteristic GATT service for
 control, and pulls bulk data (live preview, recording downloads) over a WiFi
 Direct link.
 
+---
+
+## Roadmap
+
+This repo is the **contract** both stacks build against, so its roadmap is
+*surface coverage* — which message groups are defined and stable — rather than
+runtime features. It leads the system arc: a phase can't land in app/firmware
+until its wire shape is defined here.
+
+| Phase | Theme | Contract status |
+| ----- | ----- | --------------- |
+| 1 | **Framing & control** — `ChunkedPayload`, `Command`/`CommandResponse`, `ChunkAck` | ✅ stable |
+| 2 | **Connect & telemetry** — discovery/filter rules, device info, telemetry | ✅ stable |
+| 3 | **Capture & transfer** — recording control, WiFi Direct handshake, RTSP preview descriptor | ✅ stable |
+| 4 | **Intelligence** — match events, scoreboard/banner state | ✅ defined; semantics may tighten as firmware lands |
+| 5 | **Broadcast** — overlay rendering semantics (`overlay-rendering.md`), streaming | ✅ defined |
+
+Message-group coverage (`bluetooth.proto`, 37 messages):
+
+- [x] Framing — `ChunkedPayload`, `ChunkAck`
+- [x] Command / response envelopes + `correlation_id` matching
+- [x] Telemetry
+- [x] Match events
+- [x] Recording / streaming control
+- [x] Session push
+- [x] WiFi Direct handshake (`wifi.proto`: RTSP descriptor, preview heartbeat)
+- [x] Overlay rendering semantics (`overlay-rendering.md`)
+
+Stabilizing as the stacks implement against it: see [Versioning](#versioning)
+for how breaking changes are coordinated (`protocol_version` bump).
+
+---
+
 ## Channel split
 
 | Channel       | Purpose                                                      |
