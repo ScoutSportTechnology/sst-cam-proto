@@ -24,6 +24,9 @@ jobs:
           format: false
           breaking: false
           push: false
+          # Org disables Actions commenting on PRs (GITHUB_TOKEN can't write
+          # issue comments) — failures surface as annotations + job status.
+          pr_comment: false
 
   breaking:
     runs-on: ubuntu-latest
@@ -39,6 +42,7 @@ jobs:
           push: false
           breaking: true
           breaking_against: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=main"
+          pr_comment: false
 
   codegen-drift:
     # Regenerate the Dart bindings and fail if the committed output is stale.
@@ -51,6 +55,7 @@ jobs:
         with:
           # Only set buf up on PATH — skip lint/breaking/format/push here.
           setup_only: true
+          pr_comment: false
 
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
