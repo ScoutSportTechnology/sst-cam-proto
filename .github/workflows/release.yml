@@ -1,0 +1,71 @@
+name: release
+
+# Manual, no-PR release. Click "Run workflow" (or call via API) to cut a release.
+# Why workflow_dispatch instead of release-please: this org disables "Allow GitHub
+# Actions to create and approve pull requests", so GITHUB_TOKEN cannot open a
+# release PR. Tagging + cutting a Release is contents:write (allowed), and the
+# "Release Tags" ruleset permits creating compliant semver tags. So this needs
+# no PAT and no GitHub App.
+#
+# The tag is the source of truth for the version. gen/dart/pubspec.yaml's version
+# field is not auto-bumped (a push back to main is blocked by branch protection);
+# the app pins the package by git `ref: vX.Y.Z`, not by that field.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version tag, e.g. v1.2.3 (leave empty to auto-bump)"
+        required: false
+        default: ""
+      bump:
+        description: "Bump level when version is empty"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          if [ -n "$IN_VERSION" ]; then
+            tag="$IN_VERSION"
+          else
+            latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+            latest="${latest:-v0.0.0}"
+            ver="${latest#v}"
+            MA="${ver%%.*}"; rest="${ver#*.}"; MI="${rest%%.*}"; PA="${rest##*.}"
+            case "$IN_BUMP" in
+              major) MA=$((MA+1)); MI=0; PA=0 ;;
+              minor) MI=$((MI+1)); PA=0 ;;
+              patch) PA=$((PA+1)) ;;
+            esac
+            tag="v${MA}.${MI}.${PA}"
+          fi
+          echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::invalid version '$tag'"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag"
+
+      - name: Create tag + GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --generate-notes
