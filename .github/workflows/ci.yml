@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Job names below (lint, breaking, codegen-drift) are the required status
+  # checks configured on the `main` branch ruleset — keep them stable.
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          # This job only lints — disable the other steps the action runs.
+          format: false
+          breaking: false
+          push: false
+          # Org disables Actions commenting on PRs (GITHUB_TOKEN can't write
+          # issue comments) — failures surface as annotations + job status.
+          pr_comment: false
+
+  breaking:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so buf can diff against the main branch.
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: false
+          format: false
+          push: false
+          breaking: true
+          breaking_against: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=main"
+          pr_comment: false
+
+  codegen-drift:
+    # Regenerate the Dart bindings and fail if the committed output is stale.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          # Only set buf up on PATH — skip lint/breaking/format/push here.
+          setup_only: true
+          pr_comment: false
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Install protoc-gen-dart
+        run: |
+          dart pub global activate protoc_plugin
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Dart bindings
+        run: buf generate
+
+      - name: Fail on stale generated output
+        run: |
+          git diff --exit-code gen/dart \
+            || (echo "::error::gen/dart is stale — run 'just gen' and commit the result." && exit 1)

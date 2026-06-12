@@ -1,0 +1,32 @@
+version: v2
+
+# Single module rooted at the repo root — bluetooth.proto and wifi.proto live
+# alongside this file.
+modules:
+  - path: .
+
+lint:
+  use:
+    - DEFAULT
+  except:
+    # The contract package is the plain, unversioned `sst_cam` (it is the single
+    # source of truth mounted as a submodule by both consumers — a `.v1` suffix
+    # would churn every import in app + firmware for no benefit). Versioning is
+    # handled at the release/tag level (release-please), not in the package name.
+    - PACKAGE_VERSION_SUFFIX
+    # The protos live at the repo root, not under a `sst_cam/` directory tree, so
+    # the file path deliberately does not mirror the package name.
+    - PACKAGE_DIRECTORY_MATCH
+    # The enum constants (RECORDING_START, SHAPE_RECT, zero values like
+    # STREAMING_ACTION_UNKNOWN / TEXT_ALIGN_LEFT, etc.) predate buf and are the
+    # shipped wire contract consumed by both app + firmware. buf's DEFAULT enum
+    # naming (ENUM_NAME_ prefix on every value, _UNSPECIFIED on the zero value)
+    # would force renaming every constant — a breaking change across both stacks
+    # for zero functional gain. Excepted deliberately; revisit only as part of a
+    # coordinated protocol_version bump (see CLAUDE.md "Changing the schema").
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+
+breaking:
+  use:
+    - FILE
