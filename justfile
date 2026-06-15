@@ -2,11 +2,14 @@
 #
 # Recipes run natively when you're INSIDE the dev container, and transparently
 # delegate to the container via the `devcontainer` CLI when run from the HOST.
-# `just gen` works the same in both places.
+#
+# This repo ships only the .proto contract: buf lints it and checks for breaking
+# changes. Consumers (app, firmware) vendor it as a git submodule and generate
+# their own bindings — there is no codegen here.
 #
 # Requirements:
 #   - Host:         `just` + the `devcontainer` CLI on PATH (or at ~/.devcontainers/bin).
-#   - In-container: buf, dart, protoc-gen-dart (baked into the image).
+#   - In-container: buf (baked into the image).
 # Start the container once from the host with `just up` before delegating.
 
 set shell := ["bash", "-uc"]
@@ -27,10 +30,6 @@ shell:
 
 # --- buf recipes (auto native-or-delegated) -------------------------------
 
-# Generate the Dart bindings into gen/dart/lib.
-gen:
-    @just _run "buf generate"
-
 # Lint the protos (DEFAULT rules, see buf.yaml).
 lint:
     @just _run "buf lint"
@@ -38,9 +37,6 @@ lint:
 # Check for breaking changes against main.
 breaking:
     @just _run "buf breaking --against '.git#branch=main'"
-
-# Alias: build == generate the bindings.
-build: gen
 
 # --- internal -------------------------------------------------------------
 

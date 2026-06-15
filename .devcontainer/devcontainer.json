@@ -15,7 +15,6 @@
       ]
     }
   },
-  // Print the tool versions so a fresh container immediately confirms buf +
-  // dart + protoc-gen-dart are on PATH.
-  "postCreateCommand": "buf --version && dart --version && protoc-gen-dart --version"
+  // Print the buf version so a fresh container immediately confirms it's on PATH.
+  "postCreateCommand": "buf --version"
 }
