@@ -9,9 +9,9 @@ name: release
 # Uses the default GITHUB_TOKEN: tagging + cutting a Release is contents:write
 # (allowed), and the "Release Tags" ruleset permits creating compliant semver
 # tags (it only blocks delete/update/force-push). No PAT or GitHub App needed.
-# The tag is the source of truth for the version; gen/dart/pubspec.yaml is not
-# auto-bumped (a push to main is blocked by branch protection) — the app pins the
-# package by git ref vX.Y.Z, not by that field.
+# This repo ships no build artifact — the tag IS the release. Consumers vendor
+# proto as a git submodule and pin it to a tag's commit (checkout the tag in the
+# submodule, then commit the gitlink in the superproject).
 
 on:
   push:

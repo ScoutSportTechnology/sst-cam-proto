@@ -1,9 +1,0 @@
-version: v2
-
-# Generate the Dart bindings into the committed package at gen/dart/lib.
-# `strategy: all` runs the plugin once over the whole module (protoc-gen-dart
-# resolves cross-file references in a single invocation).
-plugins:
-  - local: protoc-gen-dart
-    out: gen/dart/lib
-    strategy: all
