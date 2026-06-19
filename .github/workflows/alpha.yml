@@ -1,0 +1,60 @@
+name: alpha
+
+# Mint an alpha prerelease on every push (merge) to develop. resolve-version.sh
+# bumps the base from the latest stable tag via Conventional Commits, then
+# appends the next -alpha.N counter. Docs/chore-only merges resolve to
+# released=false and mint nothing. This repo is artifact-free: the tag IS the
+# release, so there is NO asset — consumers vendor the submodule and pin a tag's
+# commit. The alpha is the contract validated by ci.yml (lint+breaking+build) in
+# isolation, before it is proven against real consumers (that is the beta rung).
+#
+# Uses the default GITHUB_TOKEN: tagging + cutting a (pre)release is
+# contents:write, and the "Release Tags" ruleset permits creating compliant
+# v* tags. No PAT or GitHub App needed.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Force base version eg v0.1.0 (seeds the alpha line)"
+        required: false
+        default: ""
+      bump:
+        description: "Force base bump level (overrides commit scan)"
+        type: choice
+        options: ["", patch, minor, major]
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  alpha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so resolve-version.sh sees the latest stable tag
+          # and the existing -alpha.N counters.
+          fetch-depth: 0
+
+      - name: Resolve next alpha tag
+        id: ver
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_BUMP: ${{ inputs.bump }}
+        run: ./scripts/ci/resolve-version.sh alpha
+
+      - name: Create alpha prerelease (no asset)
+        if: steps.ver.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --generate-notes
