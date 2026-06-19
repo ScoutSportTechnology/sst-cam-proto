@@ -194,3 +194,34 @@ scalars.
 - Adding optional fields is backward-compatible.
 - Removing, renaming, or renumbering fields requires a coordinated firmware +
   app release.
+
+### Release model — branches, ladder, tags
+
+This repo is **artifact-free**: the **tag is the release**, consumers vendor the
+submodule and pin a tag's commit. Branch model:
+`feat/* → develop → release/X.Y.Z → main`, with a contract maturity ladder:
+
+| Rung | Where | Tag | Meaning |
+| ---- | ----- | --- | ------- |
+| **alpha** | push to `develop` | `vX.Y.Z-alpha.N` | contract validated by `buf lint` + `buf breaking` + `buf build` in isolation |
+| **beta** | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | candidate proven against the real consumers (firmware + app) in integration |
+| **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `promote.yml` only tags a beta-validated commit) |
+
+**The bump encodes wire compatibility** — this repo is the org's source of
+"breaking". A breaking change (remove/rename/renumber a field) is `feat!:` /
+`BREAKING CHANGE` → **major** (past `1.0.0`); additive → `feat:` → **minor**;
+non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (in CI, vs `main`)
+is the automated classifier. A proto major forces a major in both consumers.
+
+Pushing to `main` does **not** auto-cut a fresh release — promotion only
+elevates an already-validated beta candidate to its stable tag.
+
+### How consumers pin a version (submodule)
+
+Both app and firmware embed this repo as a git submodule at `proto/`. Pin a
+`-beta.N` for integration and a stable `vX.Y.Z` for release:
+
+```bash
+cd proto && git fetch --tags && git checkout v0.1.0-beta.1 && cd ..
+git add proto && git commit -m "chore(proto): pin contract to v0.1.0-beta.1"
+```

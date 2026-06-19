@@ -47,6 +47,20 @@ rules both consumers must match; app repo = how firmware should behave.
 - To express "intentionally absent vs. zero" on a shared scalar, use proto3
   `optional` plus a documented default (see `docs/solutions/`).
 
+### The bump encodes wire compatibility
+
+This repo is the org's source of truth for "breaking", so the SemVer bump on
+the release **must classify wire compatibility** — consumers rely on it to tell
+a safe contract change from a dangerous one:
+
+- **breaking** (remove/rename/renumber a field) → **major** (once past `1.0.0`).
+  Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run in
+  `ci.yml` vs `main`, the last released contract) is the automated classifier;
+  the commit type must match what `buf breaking` reports.
+- **additive** (new optional field/message) → **minor** (`feat:`).
+- **non-breaking fix** → **patch** (`fix:` / `perf:`).
+- docs/chore/ci/test/refactor-only → **no release**.
+
 ## Regenerating bindings
 
 This repo holds no generated code — consumers generate their own:
@@ -60,31 +74,84 @@ a contract change isn't done until both stacks build against it.
 
 ## CI/CD & releasing
 
-PR-gated, Conventional-Commit driven. Two workflows:
+PR-gated, Conventional-Commit driven, **artifact-free** (the tag IS the release;
+there is no build output to publish). Branch model:
+`feat/* → develop → release/X.Y.Z → main`. Contract **maturity ladder**:
 
-- `.github/workflows/ci.yml` — **pull requests only**. Required status checks on `main`: `lint` (`buf lint`) and `breaking` (`buf breaking` vs `main`). No codegen — this repo ships only the `.proto` contract; both consumers vendor it as a git submodule and generate their own bindings.
-- `.github/workflows/release.yml` — on **push to `main`** (a merge) + manual `workflow_dispatch`. Scans commits since the last `vX.Y.Z` tag and bumps semver: `feat:` → minor, `fix:`/`perf:` → patch, `BREAKING CHANGE` or `type!:` → major; docs/chore/ci/test/refactor-only → **skip (no release)**. Creates the tag + GitHub Release with the default `GITHUB_TOKEN` — no PAT/App (the org blocks Actions-created PRs so release-please isn't used; tagging is `contents:write` and the "Release Tags" ruleset allows creating compliant `v*` tags). **The tag IS the release — no build artifact.**
+- **alpha** — the contract validated by `lint` + `breaking` + `build` *in
+  isolation* on `develop`.
+- **beta** — the candidate proven against the **real consumers** (firmware +
+  app) in integration off a `release/X.Y.Z` branch.
+- **stable** — shipped on promotion to `main`.
+
+Tag scheme: `vX.Y.Z-alpha.N` (develop) → `vX.Y.Z-beta.N` (release/*) →
+`vX.Y.Z` (main). Version math lives in `scripts/ci/resolve-version.sh` (unit-
+tested via `resolve-version-test.sh`).
+
+Four workflows:
+
+- `.github/workflows/ci.yml` — **PRs into `develop`, `release/*`, and `main`**.
+  Jobs `lint` (`buf lint`), `breaking` (`buf breaking` vs `main`, the last
+  released contract), `build` (`buf build` compile-smoke). `main` is kept in the
+  triggers (unlike app/firmware) because these checks are cheap and build
+  nothing, so they run directly on the `release/*→main` PR and realize `main`'s
+  required status checks. No language codegen — consumers vendor the submodule
+  and generate their own bindings.
+- `.github/workflows/alpha.yml` — **push to `develop`** + dispatch. Runs
+  `resolve-version.sh alpha`; on a releasable bump, cuts `vX.Y.Z-alpha.N` as a
+  **prerelease** Release — **no asset**.
+- `.github/workflows/release-beta.yml` — **push to `release/*`** + dispatch.
+  Base `X.Y.Z` from the branch name; `resolve-version.sh beta`; cuts
+  `vX.Y.Z-beta.N` **prerelease** — **no asset**. The beta commit is what
+  firmware + app vendor for integration.
+- `.github/workflows/promote.yml` — **push to `main`** + dispatch. Asserts a
+  `vX.Y.Z-beta.*` candidate exists (fail fast otherwise), then `resolve-version.sh
+  stable` cuts `vX.Y.Z` — **no build, no asset**. `main` never builds (structural
+  here: this repo has no artifact).
+
+All use the default `GITHUB_TOKEN` (tagging is `contents: write`; the "Release
+Tags" ruleset permits creating compliant `v*` tags). The org blocks
+Actions-created PRs, so `pr_comment: false` and no release-please.
+
+Two **one-time maintainer runbooks** (not run by CI): `docs/ci/rulesets.md`
+(branch + tag rulesets) and `docs/ci/version-reset-runbook.md` (delete the bogus
+`v0.1.0`, seed the `0.1.0-alpha` line; `0.1.0-beta.1` is the joint firmware+app
+beta target; `1.0.0` is the first stable contract).
 
 ### How consumers pin a version (submodule)
 
-Both app and firmware embed this repo as a git submodule at `proto/`. A submodule records a commit, so pin it to a tag's commit and bump deliberately:
+Both app and firmware embed this repo as a git submodule at `proto/`. A submodule
+records a commit, so pin it to a tag's commit and bump deliberately. Consumers
+can pin a `-beta.N` for integration and a stable `vX.Y.Z` for release:
 
 ```bash
-cd proto && git fetch --tags && git checkout v0.2.0 && cd ..
-git add proto && git commit -m "chore(proto): bump contract to v0.2.0"
+cd proto && git fetch --tags && git checkout v0.1.0-beta.1 && cd ..   # integration
+git add proto && git commit -m "chore(proto): pin contract to v0.1.0-beta.1"
 ```
+
+A proto **major** bump forces a major in both consumers (see the bump-encodes-
+wire-compatibility rule above).
 
 ### Branch + commit + tag rules
 
-- `main` is protected: no direct push; PR + 1 approval + green required checks to merge.
-- Tags `v*` are immutable semver (no delete/move/force-push).
-- Use Conventional Commits. The **squash-merge subject** is what `release.yml` reads to choose the bump — a non-conventional subject cuts no release.
+- `develop` is the default branch and the target for `feat/*`/`fix/*`. `main`
+  and `release/*` are protected: no direct push; PR + 1 approval + green
+  `lint`/`breaking`/`build` to merge (admin/hotfix bypass on `main`).
+- Tags `v*` are immutable SemVer (no delete/move/force-push).
+- Use Conventional Commits. The merge subject's type drives the bump
+  `resolve-version.sh` computes — a non-conventional subject cuts no alpha.
+- **Push to `main` does NOT auto-cut a fresh release** — `promote.yml` only
+  promotes a beta-validated candidate to its stable tag.
 
 ### Releasing
 
-- Normal: merge a PR whose squash subject is `feat:`/`fix:`/… → release auto-cuts on merge.
-- Manual: `gh workflow run release.yml -f bump=minor` (or `-f version=vX.Y.Z`).
-- A breaking schema change is a `feat!:`/`BREAKING CHANGE` (major) coordinated with both consumers (see versioning above).
+1. Land `feat:`/`fix:` PRs into `develop` → `alpha.yml` mints `vX.Y.Z-alpha.N`.
+2. Cut `release/X.Y.Z` from `develop` → `release-beta.yml` mints
+   `vX.Y.Z-beta.N`; firmware + app vendor it and sign off.
+3. PR `release/X.Y.Z → main` (green `lint`/`breaking`/`build`) → `promote.yml`
+   mints stable `vX.Y.Z`.
+- A breaking schema change is `feat!:`/`BREAKING CHANGE` (major), coordinated
+  with both consumers (see versioning above).
 
 ## Documented solutions
 
