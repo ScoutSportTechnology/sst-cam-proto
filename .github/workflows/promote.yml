@@ -13,8 +13,10 @@ name: promote
 #
 # Deriving X.Y.Z: GitHub does not expose the merged head-branch name on a push
 # event, so the version is taken from the merge commit subject, which for a
-# squash/merge of release/X.Y.Z contains "release/X.Y.Z". A workflow_dispatch
-# `version` input overrides for manual promotion.
+# merge of release/X.Y.Z contains "release/X.Y.Z". Under squash/rebase merges
+# that reference is lost, so we fall back to the newest vX.Y.Z-beta.* tag in the
+# commit's ancestry (git tag --merged). A workflow_dispatch `version` input
+# overrides both for manual promotion.
 
 on:
   push:
@@ -28,6 +30,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
 
 jobs:
   promote:
@@ -45,19 +51,29 @@ jobs:
           IN_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          base=""
           if [ -n "${IN_VERSION:-}" ]; then
             base="${IN_VERSION#v}"
           else
-            # The merge/squash commit subject references the release/X.Y.Z branch.
-            subject="$(git log -1 --format='%s%n%b')"
-            base="$(echo "$subject" | grep -oE 'release/[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's#release/##')"
+            # Prefer the release/X.Y.Z reference carried by the merge commit
+            # subject/body. Under squash/rebase merges that reference is lost,
+            # so fall back to the newest -beta.* tag in this commit's ancestry.
+            base="$(git log -1 --format='%s%n%b' "$GITHUB_SHA" \
+              | grep -oE 'release/[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's#release/##' || true)"
+            if [ -z "$base" ]; then
+              cand="$(git tag --merged "$GITHUB_SHA" -l 'v*-beta.*' --sort=-v:refname \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -1 || true)"
+              cand="${cand#v}"; base="${cand%-beta.*}"
+            fi
           fi
+          # The || true above is essential: without it pipefail aborts the step
+          # before this validation can surface the actionable error message.
           echo "$base" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            || { echo "::error::could not derive a valid X.Y.Z to promote (got '${base:-}')"; exit 1; }
+            || { echo "::error::cannot derive X.Y.Z under promotion (squash merge? pass workflow_dispatch version=vX.Y.Z)"; exit 1; }
 
           # A stable promotion must correspond to a beta candidate that was cut
           # and (per the release/*->main PR gate) proven against consumers.
-          if [ -z "$(git tag -l "v${base}-beta."'*' | head -1)" ]; then
+          if [ -z "$(git tag -l "v${base}-beta."'*' --sort=-v:refname | head -1)" ]; then
             echo "::error::no v${base}-beta.* tag exists — refusing to promote a version that was never a beta candidate"
             exit 1
           fi
@@ -72,9 +88,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release create "${{ steps.ver.outputs.tag }}" \
+          TAG="${{ steps.ver.outputs.tag }}"
+          # Idempotent: a re-run after a partial promote must not abort on an
+          # already-created Release/tag.
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "${{ steps.ver.outputs.tag }}" \
+            --title "$TAG" \
             --generate-notes
 
       - name: Post-promotion reminder (manual maintainer steps)
