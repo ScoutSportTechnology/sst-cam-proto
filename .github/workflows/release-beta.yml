@@ -1,11 +1,15 @@
 name: release-beta
 
-# Mint a beta prerelease on every push to a release/X.Y.Z branch. The base
-# X.Y.Z is taken from the branch name; resolve-version.sh appends the next
-# -beta.N counter. Betas iterate on the branch — each push bumps the counter.
-# The beta tag's commit is what firmware + app vendor (submodule pin) to prove
-# the candidate contract in integration before promotion to stable. Artifact-
-# free: the tag IS the release, NO asset.
+# Branch-scoped workflow that OWNS `release/**`. On PRs into a release/* branch it
+# runs the CI check jobs (lint + breaking + build) that satisfy the
+# release-branches ruleset's required status checks; on push/dispatch to
+# release/* it mints a beta prerelease.
+#
+# beta tag/release: the base X.Y.Z is taken from the branch name;
+# resolve-version.sh appends the next -beta.N counter. Betas iterate on the
+# branch — each push bumps the counter. The beta tag's commit is what firmware +
+# app vendor (submodule pin) to prove the candidate contract in integration
+# before promotion to stable. Artifact-free: the tag IS the release, NO asset.
 #
 # Fail fast if the branch is not named release/X.Y.Z: resolve-version.sh rejects
 # a base that is not a valid X.Y.Z, so a malformed branch name exits non-zero.
@@ -14,6 +18,8 @@ name: release-beta
 # permits compliant v* tags.
 
 on:
+  pull_request:
+    branches: ["release/**"]
   push:
     branches: ["release/**"]
   workflow_dispatch:
@@ -22,7 +28,67 @@ permissions:
   contents: write
 
 jobs:
+  # Job names lint and breaking are the required status checks wired into the
+  # branch rulesets — keep them byte-identical. `build` (buf build) is the
+  # codegen-compile smoke; it is wired in alongside them. These satisfy the
+  # release-branches ruleset on release/* PRs. They run on PRs only; push/
+  # dispatch goes straight to the beta job.
+
+  lint:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          # This job only lints — disable the other steps the action runs.
+          format: false
+          breaking: false
+          push: false
+          # Org disables Actions commenting on PRs (GITHUB_TOKEN can't write
+          # issue comments) — failures surface as annotations + job status.
+          pr_comment: false
+
+  breaking:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so buf can diff against the main branch.
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: false
+          format: false
+          push: false
+          breaking: true
+          breaking_against: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=main"
+          pr_comment: false
+
+  build:
+    # Codegen-compile smoke: `buf build` compiles the schema into a
+    # FileDescriptorSet — the cheapest "the schemas still compile" check with no
+    # language toolchain. This is the alpha-ladder "codegen succeeds" rung.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: false
+          format: false
+          breaking: false
+          push: false
+          # buf-action runs `buf build` as part of setup/validation; keep the
+          # other steps off so this job is the compile-smoke only.
+          pr_comment: false
+
   beta:
+    # Push to a release/* branch or manual dispatch — never on PRs (those run the
+    # check jobs above).
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
