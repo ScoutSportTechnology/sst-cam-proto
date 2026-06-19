@@ -1,0 +1,132 @@
+name: release-alpha
+
+# Branch-scoped workflow that OWNS `develop`. On PRs into develop it runs the CI
+# check jobs (lint + breaking + build) that satisfy the develop ruleset's
+# required status checks; on push/dispatch to develop it mints an alpha
+# prerelease.
+#
+# alpha tag/release: resolve-version.sh bumps the base from the latest stable tag
+# via Conventional Commits, then appends the next -alpha.N counter. Docs/chore-
+# only merges resolve to released=false and mint nothing. This repo is artifact-
+# free: the tag IS the release, so there is NO asset — consumers vendor the
+# submodule and pin a tag's commit. The alpha is the contract validated by the
+# check jobs (lint+breaking+build) in isolation, before it is proven against real
+# consumers (that is the beta rung).
+#
+# Uses the default GITHUB_TOKEN: tagging + cutting a (pre)release is
+# contents:write, and the "Release Tags" ruleset permits creating compliant
+# v* tags. No PAT or GitHub App needed.
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Force base version eg v0.1.0 (seeds the alpha line)"
+        required: false
+        default: ""
+      bump:
+        description: "Force base bump level (overrides commit scan)"
+        type: choice
+        options: ["", patch, minor, major]
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpha-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job names lint and breaking are the required status checks wired into the
+  # branch rulesets — keep them byte-identical. `build` (buf build) is the
+  # codegen-compile smoke; it is wired in alongside them. No language codegen
+  # here: both consumers vendor proto as a git submodule and generate their own
+  # bindings, so this repo ships only the .proto contract + a version tag.
+  # These run on PRs only; push/dispatch goes straight to the alpha job.
+
+  lint:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          # This job only lints — disable the other steps the action runs.
+          format: false
+          breaking: false
+          push: false
+          # Org disables Actions commenting on PRs (GITHUB_TOKEN can't write
+          # issue comments) — failures surface as annotations + job status.
+          pr_comment: false
+
+  breaking:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so buf can diff against the main branch.
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: false
+          format: false
+          push: false
+          breaking: true
+          breaking_against: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=main"
+          pr_comment: false
+
+  build:
+    # Codegen-compile smoke: `buf build` compiles the schema into a
+    # FileDescriptorSet — the cheapest "the schemas still compile" check with no
+    # language toolchain. This is the alpha-ladder "codegen succeeds" rung.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: false
+          format: false
+          breaking: false
+          push: false
+          # buf-action runs `buf build` as part of setup/validation; keep the
+          # other steps off so this job is the compile-smoke only.
+          pr_comment: false
+
+  alpha:
+    # Push (merge) to develop or manual dispatch — never on PRs (those run the
+    # check jobs above).
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so resolve-version.sh sees the latest stable tag
+          # and the existing -alpha.N counters.
+          fetch-depth: 0
+
+      - name: Resolve next alpha tag
+        id: ver
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_BUMP: ${{ inputs.bump }}
+        run: ./scripts/ci/resolve-version.sh alpha
+
+      - name: Create alpha prerelease (no asset)
+        if: steps.ver.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --generate-notes
