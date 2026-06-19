@@ -199,11 +199,11 @@ scalars.
 
 This repo is **artifact-free**: the **tag is the release**, consumers vendor the
 submodule and pin a tag's commit. Branch model:
-`feat/* → develop → release/X.Y.Z → main`, with a contract maturity ladder:
+`feat/* → development → release/X.Y.Z → main`, with a contract maturity ladder:
 
 | Rung | Where | Tag | Meaning |
 | ---- | ----- | --- | ------- |
-| **alpha** | push to `develop` | `vX.Y.Z-alpha.N` | contract validated by `buf lint` + `buf breaking` + `buf build` in isolation |
+| **alpha** | push to `development` | `vX.Y.Z-alpha.N` | contract validated by `buf lint` + `buf breaking` + `buf build` in isolation |
 | **beta** | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | candidate proven against the real consumers (firmware + app) in integration |
 | **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `release.yml` only tags a beta-validated commit) |
 

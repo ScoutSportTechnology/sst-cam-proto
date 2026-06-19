@@ -13,7 +13,7 @@ is not a deliberately released contract. As the org's source of "breaking", the
 proto version line must be clean before consumers pin against it. The target
 ladder is:
 
-- `0.1.0-alpha.N` — the contract iterating on `develop` (lint+breaking+build in
+- `0.1.0-alpha.N` — the contract iterating on `development` (lint+breaking+build in
   isolation).
 - `0.1.0-beta.1` — the first release candidate, consumed by the **joint
   firmware + app beta** for cross-stack integration sign-off.
@@ -65,10 +65,10 @@ The "Release Tags" ruleset blocks tag deletion by design, so the bypass is
 ## Seed the alpha line
 
 With no stable tags present, `resolve-version.sh alpha` bumps from an implicit
-`v0.0.0`, so the first `feat:` merge to `develop` mints `v0.1.0-alpha.1`
+`v0.0.0`, so the first `feat:` merge to `development` mints `v0.1.0-alpha.1`
 automatically via `alpha.yml`. Two ways to seed:
 
-- **Let it happen:** merge the first releasable (`feat:`) PR into `develop`;
+- **Let it happen:** merge the first releasable (`feat:`) PR into `development`;
   `alpha.yml` mints `v0.1.0-alpha.1`.
 - **Deterministic seed (manual dispatch):** run `alpha.yml` with the
   `version=v0.1.0` input (forwarded as `IN_VERSION`), which seeds
@@ -77,7 +77,7 @@ automatically via `alpha.yml`. Two ways to seed:
 
 ## After reset
 
-- First develop alpha is `v0.1.0-alpha.1`.
+- First development alpha is `v0.1.0-alpha.1`.
 - Cut `release/0.1.0` when the alpha contract is ready → `release-beta.yml` mints
   `v0.1.0-beta.1` (the joint firmware+app beta vendors this commit).
 - Promote `release/0.1.0 → main` only after consumer sign-off → `promote.yml`

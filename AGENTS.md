@@ -19,15 +19,15 @@ CI/CD + workflow quick-reference.
 
 ## Branch model
 
-`feat/* → develop → release/X.Y.Z → main`. `develop` is the default branch and
-the target for `feat/*`/`fix/*`. `main` and `release/*` are PR-only (no direct
+`feat/* → development → release/X.Y.Z → main`. `development` is the default
+branch and the target for `feat/*`/`fix/*`. `main` and `release/*` are PR-only (no direct
 push; green `lint`/`breaking`/`build`; admin/hotfix bypass on `main`).
 
 ## Maturity ladder & tags
 
 | Rung | Trigger | Tag | What it means |
 | ---- | ------- | --- | ------------- |
-| alpha | push to `develop` | `vX.Y.Z-alpha.N` | `buf lint`+`buf breaking`+`buf build` pass in isolation |
+| alpha | push to `development` | `vX.Y.Z-alpha.N` | `buf lint`+`buf breaking`+`buf build` pass in isolation |
 | beta | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | proven against real consumers (firmware + app) |
 | stable | merge to `main` | `vX.Y.Z` | shipped — no build, no asset |
 
@@ -37,8 +37,8 @@ Three branch-scoped workflows; there is no standalone `ci.yml` — the PR gate
 checks (`lint`, `breaking`, `build`) are folded into the alpha/beta workflows,
 gated to `pull_request`. Same job names, so rulesets are unchanged.
 
-- `release-alpha.yml` (name `release-alpha`) — owns `develop`. On
-  `pull_request:[develop]` runs `lint`/`breaking`/`build`. On `push:[develop]`
+- `release-alpha.yml` (name `release-alpha`) — owns `development`. On
+  `pull_request:[development]` runs `lint`/`breaking`/`build`. On `push:[development]`
   (+ dispatch) → `resolve-version.sh alpha` → `vX.Y.Z-alpha.N` prerelease, no
   asset.
 - `release-beta.yml` (name `release-beta`) — owns `release/**`. On
@@ -55,7 +55,7 @@ tested by `scripts/ci/resolve-version-test.sh`. All workflows use the default
 
 ## One-time maintainer runbooks (not run by CI)
 
-- `docs/ci/rulesets.md` — branch + tag rulesets (`develop`/`main`/`release/*`,
+- `docs/ci/rulesets.md` — branch + tag rulesets (`development`/`main`/`release/*`,
   immutable `v*` tags).
 - `docs/ci/version-reset-runbook.md` — delete the bogus `v0.1.0`, seed
   `0.1.0-alpha`; `0.1.0-beta.1` is the joint firmware+app beta target; `1.0.0`

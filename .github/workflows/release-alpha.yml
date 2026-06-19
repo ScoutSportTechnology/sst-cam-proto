@@ -1,9 +1,9 @@
 name: release-alpha
 
-# Branch-scoped workflow that OWNS `develop`. On PRs into develop it runs the CI
-# check jobs (lint + breaking + build) that satisfy the develop ruleset's
-# required status checks; on push/dispatch to develop it mints an alpha
-# prerelease.
+# Branch-scoped workflow that OWNS `development`. On PRs into development it runs
+# the CI check jobs (lint + breaking + build) that satisfy the development
+# ruleset's required status checks; on push/dispatch to development it mints an
+# alpha prerelease.
 #
 # alpha tag/release: resolve-version.sh bumps the base from the latest stable tag
 # via Conventional Commits, then appends the next -alpha.N counter. Docs/chore-
@@ -19,9 +19,9 @@ name: release-alpha
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [development]
   push:
-    branches: [develop]
+    branches: [development]
   workflow_dispatch:
     inputs:
       version:
@@ -101,7 +101,7 @@ jobs:
           pr_comment: false
 
   alpha:
-    # Push (merge) to develop or manual dispatch — never on PRs (those run the
+    # Push (merge) to development or manual dispatch — never on PRs (those run the
     # check jobs above).
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest

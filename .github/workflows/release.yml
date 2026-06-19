@@ -103,5 +103,5 @@ jobs:
             echo ""
             echo "Manual maintainer follow-up (not automated):"
             echo "- Delete the merged \`release/${{ steps.base.outputs.base }}\` branch."
-            echo "- Merge \`main\` back into \`develop\` so the stable tag's history is in the integration branch."
+            echo "- Merge \`main\` back into \`development\` so the stable tag's history is in the integration branch."
           } >> "$GITHUB_STEP_SUMMARY"

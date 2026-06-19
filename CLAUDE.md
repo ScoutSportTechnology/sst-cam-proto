@@ -76,15 +76,15 @@ a contract change isn't done until both stacks build against it.
 
 PR-gated, Conventional-Commit driven, **artifact-free** (the tag IS the release;
 there is no build output to publish). Branch model:
-`feat/* → develop → release/X.Y.Z → main`. Contract **maturity ladder**:
+`feat/* → development → release/X.Y.Z → main`. Contract **maturity ladder**:
 
 - **alpha** — the contract validated by `lint` + `breaking` + `build` *in
-  isolation* on `develop`.
+  isolation* on `development`.
 - **beta** — the candidate proven against the **real consumers** (firmware +
   app) in integration off a `release/X.Y.Z` branch.
 - **stable** — shipped on promotion to `main`.
 
-Tag scheme: `vX.Y.Z-alpha.N` (develop) → `vX.Y.Z-beta.N` (release/*) →
+Tag scheme: `vX.Y.Z-alpha.N` (development) → `vX.Y.Z-beta.N` (release/*) →
 `vX.Y.Z` (main). Version math lives in `scripts/ci/resolve-version.sh` (unit-
 tested via `resolve-version-test.sh`).
 
@@ -92,9 +92,9 @@ Three branch-scoped workflows (no standalone `ci.yml` — the PR gate checks are
 folded into the alpha/beta workflows, gated to `pull_request`):
 
 - `.github/workflows/release-alpha.yml` (name `release-alpha`) — **owns
-  `develop`**. On `pull_request:[develop]` runs the gate: jobs `lint` (`buf
+  `development`**. On `pull_request:[development]` runs the gate: jobs `lint` (`buf
   lint`), `breaking` (`buf breaking` vs `main`, the last released contract),
-  `build` (`buf build` compile-smoke). On `push:[develop]` (+ dispatch) runs
+  `build` (`buf build` compile-smoke). On `push:[development]` (+ dispatch) runs
   `resolve-version.sh alpha`; on a releasable bump, cuts `vX.Y.Z-alpha.N` as a
   **prerelease** Release — **no asset**. No language codegen — consumers vendor
   the submodule and generate their own bindings.
@@ -138,7 +138,7 @@ wire-compatibility rule above).
 
 ### Branch + commit + tag rules
 
-- `develop` is the default branch and the target for `feat/*`/`fix/*`. `main`
+- `development` is the default branch and the target for `feat/*`/`fix/*`. `main`
   and `release/*` are protected: no direct push; PR + 1 approval + green
   `lint`/`breaking`/`build` to merge (admin/hotfix bypass on `main`).
 - Tags `v*` are immutable SemVer (no delete/move/force-push).
@@ -149,9 +149,9 @@ wire-compatibility rule above).
 
 ### Releasing
 
-1. Land `feat:`/`fix:` PRs into `develop` → `release-alpha.yml` mints
+1. Land `feat:`/`fix:` PRs into `development` → `release-alpha.yml` mints
    `vX.Y.Z-alpha.N` (its PR gate ran `lint`/`breaking`/`build` first).
-2. Cut `release/X.Y.Z` from `develop` → `release-beta.yml` mints
+2. Cut `release/X.Y.Z` from `development` → `release-beta.yml` mints
    `vX.Y.Z-beta.N`; firmware + app vendor it and sign off.
 3. PR `release/X.Y.Z → main` (green `lint`/`breaking`/`build`) → `release.yml`
    mints stable `vX.Y.Z`.
@@ -160,22 +160,22 @@ wire-compatibility rule above).
 
 ## Release lifecycle
 
-The version ladder is driven by **which branch you push to**, not by counters. Tags climb `vX.Y.Z-alpha.N` (develop) → `vX.Y.Z-beta.N` (release/*) → `vX.Y.Z` (main); the math lives in `scripts/ci/resolve-version.sh`.
+The version ladder is driven by **which branch you push to**, not by counters. Tags climb `vX.Y.Z-alpha.N` (development) → `vX.Y.Z-beta.N` (release/*) → `vX.Y.Z` (main); the math lives in `scripts/ci/resolve-version.sh`.
 
-**Alpha — automatic, every `develop` merge.** `release-alpha.yml` runs `resolve-version.sh alpha`: the base is a Conventional-Commit bump from the latest *stable* tag (or from `v0.0.0` when none exists), and `-alpha.N` increments per merge.
+**Alpha — automatic, every `development` merge.** `release-alpha.yml` runs `resolve-version.sh alpha`: the base is a Conventional-Commit bump from the latest *stable* tag (or from `v0.0.0` when none exists), and `-alpha.N` increments per merge.
 
 ```
-feat A → develop   →  v0.1.0-alpha.1
-feat B → develop   →  v0.1.0-alpha.2
-feat C → develop   →  v0.1.0-alpha.3
+feat A → development   →  v0.1.0-alpha.1
+feat B → development   →  v0.1.0-alpha.2
+feat C → development   →  v0.1.0-alpha.3
 ```
 
 With no stable tag yet, a `feat:` yields base `0.1.0` (a `feat!:`/`BREAKING CHANGE` → `1.0.0`; a `fix:`-only → `0.0.1`); docs/chore-only mints nothing.
 
-**Beta — when you cut the release branch.** Manually branch `release/X.Y.Z` off `develop` and push it; `release-beta.yml` runs `resolve-version.sh beta X.Y.Z` (base = the branch name):
+**Beta — when you cut the release branch.** Manually branch `release/X.Y.Z` off `development` and push it; `release-beta.yml` runs `resolve-version.sh beta X.Y.Z` (base = the branch name):
 
 ```
-git switch -c release/0.1.0 develop && git push   →  v0.1.0-beta.1
+git switch -c release/0.1.0 development && git push   →  v0.1.0-beta.1
 ```
 
 Each subsequent push to that branch bumps the beta counter — `-beta.2`, `-beta.3`, … This is the rung the **real consumers (firmware + app) vendor and validate in integration**. Alpha and beta are independent counters.
@@ -183,14 +183,14 @@ Each subsequent push to that branch bumps the beta counter — `-beta.2`, `-beta
 **Stable — when you merge `release/X.Y.Z → main`.** Pushing the branch *creates* the betas; **merging it to `main` promotes the latest beta to stable.** `release.yml` auto-selects the highest `vX.Y.Z-beta.N`, then tags `vX.Y.Z` and creates the stable Release — artifact-free (the tag *is* the release; consumers vendor the commit), no build on `main`.
 
 ```
-develop:        alpha.1   alpha.2   alpha.3
+development:    alpha.1   alpha.2   alpha.3
                                        │ cut release/0.1.0
 release/0.1.0:                         └─► beta.1 → beta.2 → beta.3
                                                               │ merge → main
 main:                                                         └─► v0.1.0  (stable)
 ```
 
-After `v0.1.0` stable exists, the next `feat:` on `develop` bumps from the latest stable → `v0.2.0-alpha.1` (a `fix:` → `v0.1.1-alpha.1`). The alpha base climbs only once a stable is cut.
+After `v0.1.0` stable exists, the next `feat:` on `development` bumps from the latest stable → `v0.2.0-alpha.1` (a `fix:` → `v0.1.1-alpha.1`). The alpha base climbs only once a stable is cut.
 
 ## Documented solutions
 

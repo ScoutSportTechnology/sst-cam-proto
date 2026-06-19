@@ -1,8 +1,8 @@
 # Branch & tag rulesets — sst-cam-proto
 
 > **STATUS: APPLIED (as of 2026-06-18).** The rulesets below are live —
-> {Release Tags, develop, main, release-branches} with OrgAdmin bypass.
-> `develop` requires `lint`/`breaking`/`build`; `main`'s required checks are
+> {Release Tags, development, main, release-branches} with OrgAdmin bypass.
+> `development` requires `lint`/`breaking`/`build`; `main`'s required checks are
 > deferred. The runbook commands are kept below for reference / re-application.
 >
 > **One-time MAINTAINER runbook.** These `gh api` calls apply the GitHub
@@ -15,7 +15,7 @@
 
 | Branch | Rule |
 | ------ | ---- |
-| `develop` (default) | PR required; green `lint` + `breaking` + `build`; no direct push / force-push / deletion. |
+| `development` (default) | PR required; green `lint` + `breaking` + `build`; no direct push / force-push / deletion. |
 | `main` | PR required; green `lint` + `breaking` + `build` (these run on the `release/*→main` PR via the `pull_request`-gated checks in `release-alpha.yml`/`release-beta.yml` — directly realizing the required checks, AE4); no direct push / force-push / deletion; admin/hotfix bypass. |
 | `release/*` | PR required into it; green `lint` + `breaking` + `build`; no force-push / deletion. |
 | tags `v*` (Release Tags) | **Immutable**: creation of compliant SemVer tags allowed; update / delete / force-push blocked. Must permit `vX.Y.Z`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`. |
@@ -23,7 +23,7 @@
 `lint`, `breaking`, and `build` are the three `pull_request` gate job names
 (folded into `release-alpha.yml`/`release-beta.yml`). They are the
 required status-check **contexts**. Capture them from a real run (a throwaway PR
-into `develop`) before wiring — GitHub matches on the exact context string.
+into `development`) before wiring — GitHub matches on the exact context string.
 
 > **⚠ OPEN CAVEAT — DO NOT RESOLVE HERE, FLAG ONLY.**
 > The `alpha` / `release-beta` / `promote` workflows run on **push** events, not
@@ -47,15 +47,15 @@ Replace `:owner`/`:repo` via `gh` (`gh repo set-default` first) or hardcode
 `ScoutSportTechnology/sst-cam-proto`. Each ruleset is created with
 `gh api --method POST repos/:owner/:repo/rulesets --input <json>`.
 
-### develop ruleset
+### development ruleset
 
 ```bash
-cat > /tmp/ruleset-develop.json <<'JSON'
+cat > /tmp/ruleset-development.json <<'JSON'
 {
-  "name": "develop",
+  "name": "development",
   "target": "branch",
   "enforcement": "active",
-  "conditions": { "ref_name": { "include": ["refs/heads/develop"], "exclude": [] } },
+  "conditions": { "ref_name": { "include": ["refs/heads/development"], "exclude": [] } },
   "rules": [
     { "type": "deletion" },
     { "type": "non_fast_forward" },
@@ -79,7 +79,7 @@ cat > /tmp/ruleset-develop.json <<'JSON'
   ]
 }
 JSON
-gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-develop.json
+gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-development.json
 ```
 
 ### main ruleset (admin/hotfix bypass)
@@ -191,8 +191,8 @@ gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-tags.json
 
 ## Ordering
 
-1. Bootstrap `develop` + flip default branch (U0).
+1. Bootstrap `development` + flip default branch (U0).
 2. Let the `pull_request` gate (in `release-alpha.yml`) run once on a throwaway
-   PR into `develop`; capture the exact `lint` / `breaking` / `build` context
+   PR into `development`; capture the exact `lint` / `breaking` / `build` context
    names.
 3. Apply the rulesets above (this doc) last.
