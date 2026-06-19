@@ -55,7 +55,7 @@ a safe contract change from a dangerous one:
 
 - **breaking** (remove/rename/renumber a field) → **major** (once past `1.0.0`).
   Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run in
-  `ci.yml` vs `main`, the last released contract) is the automated classifier;
+  the alpha/beta gate vs `main`, the last released contract) is the automated classifier;
   the commit type must match what `buf breaking` reports.
 - **additive** (new optional field/message) → **minor** (`feat:`).
 - **non-breaking fix** → **patch** (`fix:` / `perf:`).
@@ -88,26 +88,30 @@ Tag scheme: `vX.Y.Z-alpha.N` (develop) → `vX.Y.Z-beta.N` (release/*) →
 `vX.Y.Z` (main). Version math lives in `scripts/ci/resolve-version.sh` (unit-
 tested via `resolve-version-test.sh`).
 
-Four workflows:
+Three branch-scoped workflows (no standalone `ci.yml` — the PR gate checks are
+folded into the alpha/beta workflows, gated to `pull_request`):
 
-- `.github/workflows/ci.yml` — **PRs into `develop`, `release/*`, and `main`**.
-  Jobs `lint` (`buf lint`), `breaking` (`buf breaking` vs `main`, the last
-  released contract), `build` (`buf build` compile-smoke). `main` is kept in the
-  triggers (unlike app/firmware) because these checks are cheap and build
-  nothing, so they run directly on the `release/*→main` PR and realize `main`'s
-  required status checks. No language codegen — consumers vendor the submodule
-  and generate their own bindings.
-- `.github/workflows/alpha.yml` — **push to `develop`** + dispatch. Runs
+- `.github/workflows/release-alpha.yml` (name `release-alpha`) — **owns
+  `develop`**. On `pull_request:[develop]` runs the gate: jobs `lint` (`buf
+  lint`), `breaking` (`buf breaking` vs `main`, the last released contract),
+  `build` (`buf build` compile-smoke). On `push:[develop]` (+ dispatch) runs
   `resolve-version.sh alpha`; on a releasable bump, cuts `vX.Y.Z-alpha.N` as a
-  **prerelease** Release — **no asset**.
-- `.github/workflows/release-beta.yml` — **push to `release/*`** + dispatch.
-  Base `X.Y.Z` from the branch name; `resolve-version.sh beta`; cuts
+  **prerelease** Release — **no asset**. No language codegen — consumers vendor
+  the submodule and generate their own bindings.
+- `.github/workflows/release-beta.yml` (name `release-beta`) — **owns
+  `release/**`**. On `pull_request` into `release/*` runs the same
+  `lint`/`breaking`/`build` gate. On `push:[release/**]` (+ dispatch) takes base
+  `X.Y.Z` from the branch name, runs `resolve-version.sh beta`, cuts
   `vX.Y.Z-beta.N` **prerelease** — **no asset**. The beta commit is what
   firmware + app vendor for integration.
-- `.github/workflows/promote.yml` — **push to `main`** + dispatch. Asserts a
-  `vX.Y.Z-beta.*` candidate exists (fail fast otherwise), then `resolve-version.sh
-  stable` cuts `vX.Y.Z` — **no build, no asset**. `main` never builds (structural
-  here: this repo has no artifact).
+- `.github/workflows/release.yml` (name `release`) — **owns `main`**. On
+  `push:[main]` (+ dispatch) asserts a `vX.Y.Z-beta.*` candidate exists (fail
+  fast otherwise), then `resolve-version.sh stable` cuts `vX.Y.Z` — **no checks,
+  no build, no asset**. `main` never builds (structural here: this repo has no
+  artifact).
+
+The gate job names (`lint`/`breaking`/`build`) are unchanged from the prior
+split-out `ci.yml`, so branch-protection rulesets are unaffected.
 
 All use the default `GITHUB_TOKEN` (tagging is `contents: write`; the "Release
 Tags" ruleset permits creating compliant `v*` tags). The org blocks
@@ -140,15 +144,16 @@ wire-compatibility rule above).
 - Tags `v*` are immutable SemVer (no delete/move/force-push).
 - Use Conventional Commits. The merge subject's type drives the bump
   `resolve-version.sh` computes — a non-conventional subject cuts no alpha.
-- **Push to `main` does NOT auto-cut a fresh release** — `promote.yml` only
+- **Push to `main` does NOT auto-cut a fresh release** — `release.yml` only
   promotes a beta-validated candidate to its stable tag.
 
 ### Releasing
 
-1. Land `feat:`/`fix:` PRs into `develop` → `alpha.yml` mints `vX.Y.Z-alpha.N`.
+1. Land `feat:`/`fix:` PRs into `develop` → `release-alpha.yml` mints
+   `vX.Y.Z-alpha.N` (its PR gate ran `lint`/`breaking`/`build` first).
 2. Cut `release/X.Y.Z` from `develop` → `release-beta.yml` mints
    `vX.Y.Z-beta.N`; firmware + app vendor it and sign off.
-3. PR `release/X.Y.Z → main` (green `lint`/`breaking`/`build`) → `promote.yml`
+3. PR `release/X.Y.Z → main` (green `lint`/`breaking`/`build`) → `release.yml`
    mints stable `vX.Y.Z`.
 - A breaking schema change is `feat!:`/`BREAKING CHANGE` (major), coordinated
   with both consumers (see versioning above).

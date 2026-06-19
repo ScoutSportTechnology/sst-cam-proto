@@ -33,16 +33,21 @@ push; green `lint`/`breaking`/`build`; admin/hotfix bypass on `main`).
 
 ## Workflows
 
-- `ci.yml` — PRs into `develop`/`release/*`/`main`; jobs `lint`, `breaking`,
-  `build`. `main` is kept in triggers so the `release/*→main` PR realizes
-  `main`'s required checks (proto builds nothing, so it is cheap).
-- `alpha.yml` — push to `develop` → `resolve-version.sh alpha` → `vX.Y.Z-alpha.N`
-  prerelease, no asset.
-- `release-beta.yml` — push to `release/*` → base from branch name →
-  `vX.Y.Z-beta.N` prerelease, no asset.
-- `promote.yml` — push to `main` → assert a `vX.Y.Z-beta.*` exists →
-  `vX.Y.Z` stable, no build, no asset. **Push to `main` does NOT auto-cut a
-  fresh release** — it only promotes a beta-validated candidate.
+Three branch-scoped workflows; there is no standalone `ci.yml` — the PR gate
+checks (`lint`, `breaking`, `build`) are folded into the alpha/beta workflows,
+gated to `pull_request`. Same job names, so rulesets are unchanged.
+
+- `release-alpha.yml` (name `release-alpha`) — owns `develop`. On
+  `pull_request:[develop]` runs `lint`/`breaking`/`build`. On `push:[develop]`
+  (+ dispatch) → `resolve-version.sh alpha` → `vX.Y.Z-alpha.N` prerelease, no
+  asset.
+- `release-beta.yml` (name `release-beta`) — owns `release/**`. On
+  `pull_request` into `release/*` runs the same gate. On `push:[release/**]`
+  (+ dispatch) → base from branch name → `vX.Y.Z-beta.N` prerelease, no asset.
+- `release.yml` (name `release`) — owns `main`. On `push:[main]` (+ dispatch) →
+  assert a `vX.Y.Z-beta.*` exists → `vX.Y.Z` stable, no checks, no build, no
+  asset. **Push to `main` does NOT auto-cut a fresh release** — it only
+  promotes a beta-validated candidate. `main` never builds.
 
 Version math: `scripts/ci/resolve-version.sh` (modes `alpha|beta|stable`),
 tested by `scripts/ci/resolve-version-test.sh`. All workflows use the default

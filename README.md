@@ -205,7 +205,7 @@ submodule and pin a tag's commit. Branch model:
 | ---- | ----- | --- | ------- |
 | **alpha** | push to `develop` | `vX.Y.Z-alpha.N` | contract validated by `buf lint` + `buf breaking` + `buf build` in isolation |
 | **beta** | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | candidate proven against the real consumers (firmware + app) in integration |
-| **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `promote.yml` only tags a beta-validated commit) |
+| **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `release.yml` only tags a beta-validated commit) |
 
 **The bump encodes wire compatibility** — this repo is the org's source of
 "breaking". A breaking change (remove/rename/renumber a field) is `feat!:` /

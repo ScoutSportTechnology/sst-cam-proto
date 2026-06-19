@@ -1,5 +1,10 @@
 # Branch & tag rulesets — sst-cam-proto
 
+> **STATUS: APPLIED (as of 2026-06-18).** The rulesets below are live —
+> {Release Tags, develop, main, release-branches} with OrgAdmin bypass.
+> `develop` requires `lint`/`breaking`/`build`; `main`'s required checks are
+> deferred. The runbook commands are kept below for reference / re-application.
+>
 > **One-time MAINTAINER runbook.** These `gh api` calls apply the GitHub
 > rulesets that enforce the branch model. They are **not** run by CI and **not**
 > by the implementing agent — a repo admin runs them once, in order, after the
@@ -11,11 +16,12 @@
 | Branch | Rule |
 | ------ | ---- |
 | `develop` (default) | PR required; green `lint` + `breaking` + `build`; no direct push / force-push / deletion. |
-| `main` | PR required; green `lint` + `breaking` + `build` (these run on the `release/*→main` PR because `ci.yml` keeps `main` in its triggers — directly realizing the required checks, AE4); no direct push / force-push / deletion; admin/hotfix bypass. |
+| `main` | PR required; green `lint` + `breaking` + `build` (these run on the `release/*→main` PR via the `pull_request`-gated checks in `release-alpha.yml`/`release-beta.yml` — directly realizing the required checks, AE4); no direct push / force-push / deletion; admin/hotfix bypass. |
 | `release/*` | PR required into it; green `lint` + `breaking` + `build`; no force-push / deletion. |
 | tags `v*` (Release Tags) | **Immutable**: creation of compliant SemVer tags allowed; update / delete / force-push blocked. Must permit `vX.Y.Z`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`. |
 
-`lint`, `breaking`, and `build` are the three `ci.yml` job names. They are the
+`lint`, `breaking`, and `build` are the three `pull_request` gate job names
+(folded into `release-alpha.yml`/`release-beta.yml`). They are the
 required status-check **contexts**. Capture them from a real run (a throwaway PR
 into `develop`) before wiring — GitHub matches on the exact context string.
 
@@ -28,11 +34,12 @@ into `develop`) before wiring — GitHub matches on the exact context string.
 > push-triggered job, and a lightweight **no-build assertion gate** (a tiny
 > `pull_request`-triggered job that re-asserts the beta tag / contract invariant)
 > must be added so `main`'s required check is realizable. For proto specifically
-> this is mitigated because `ci.yml` (`lint`/`breaking`/`build`) **is**
-> `pull_request`-triggered and runs on the `release/*→main` PR — so the three
-> required checks are realizable via the PR directly. The caveat remains for any
-> ruleset that would try to require a push-only job (e.g. `promote`) as a PR
-> status. Verify before relying on it; do not assume.
+> this is mitigated because the gate (`lint`/`breaking`/`build`, folded into
+> `release-alpha.yml`/`release-beta.yml`) **is** `pull_request`-triggered and
+> runs on the `release/*→main` PR — so the three required checks are realizable
+> via the PR directly. The caveat remains for any ruleset that would try to
+> require a push-only job (e.g. the `push:[main]` promote in `release.yml`) as a
+> PR status. Verify before relying on it; do not assume.
 
 ## Commands
 
@@ -185,6 +192,7 @@ gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-tags.json
 ## Ordering
 
 1. Bootstrap `develop` + flip default branch (U0).
-2. Let `ci.yml` run once on a throwaway PR into `develop`; capture the exact
-   `lint` / `breaking` / `build` context names.
+2. Let the `pull_request` gate (in `release-alpha.yml`) run once on a throwaway
+   PR into `develop`; capture the exact `lint` / `breaking` / `build` context
+   names.
 3. Apply the rulesets above (this doc) last.
