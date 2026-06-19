@@ -1,0 +1,53 @@
+name: release-beta
+
+# Mint a beta prerelease on every push to a release/X.Y.Z branch. The base
+# X.Y.Z is taken from the branch name; resolve-version.sh appends the next
+# -beta.N counter. Betas iterate on the branch — each push bumps the counter.
+# The beta tag's commit is what firmware + app vendor (submodule pin) to prove
+# the candidate contract in integration before promotion to stable. Artifact-
+# free: the tag IS the release, NO asset.
+#
+# Fail fast if the branch is not named release/X.Y.Z: resolve-version.sh rejects
+# a base that is not a valid X.Y.Z, so a malformed branch name exits non-zero.
+#
+# Uses the default GITHUB_TOKEN (contents:write); the "Release Tags" ruleset
+# permits compliant v* tags.
+
+on:
+  push:
+    branches: ["release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  beta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so resolve-version.sh sees existing -beta.N
+          # counters for this base.
+          fetch-depth: 0
+
+      - name: Resolve next beta tag
+        id: ver
+        run: |
+          set -euo pipefail
+          # Branch name is release/X.Y.Z — derive the base; the script rejects a
+          # non-X.Y.Z base, so an unexpected branch shape fails fast here.
+          base="${GITHUB_REF_NAME#release/}"
+          ./scripts/ci/resolve-version.sh beta "$base"
+
+      - name: Create beta prerelease (no asset)
+        if: steps.ver.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --generate-notes
