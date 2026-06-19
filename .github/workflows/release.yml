@@ -1,4 +1,4 @@
-name: promote
+name: release
 
 # Promote a beta-validated contract to stable on push (merge) to main. Derives
 # X.Y.Z from the merged release/X.Y.Z branch and asserts that a corresponding
