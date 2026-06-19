@@ -1,0 +1,88 @@
+name: promote
+
+# Promote a beta-validated contract to stable on push (merge) to main. Derives
+# X.Y.Z from the merged release/X.Y.Z branch and asserts that a corresponding
+# vX.Y.Z-beta.* tag already exists — i.e. the candidate was cut and proven as a
+# beta before this PR merged. If no matching beta tag exists, fail fast (main
+# must only ever promote a sign-off-approved candidate, never mint a fresh
+# version). Then tag vX.Y.Z and cut the stable Release.
+#
+# NO build and NO asset: "main never builds" is structural here — this repo has
+# no build artifact, the tag IS the release. Tagging is contents:write; the
+# "Release Tags" ruleset permits compliant v* tags.
+#
+# Deriving X.Y.Z: GitHub does not expose the merged head-branch name on a push
+# event, so the version is taken from the merge commit subject, which for a
+# squash/merge of release/X.Y.Z contains "release/X.Y.Z". A workflow_dispatch
+# `version` input overrides for manual promotion.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version to promote eg v0.1.0 (overrides derive)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so the beta-tag assertion and resolve-version.sh
+          # can see all tags.
+          fetch-depth: 0
+
+      - name: Derive X.Y.Z and assert a beta candidate exists
+        id: base
+        env:
+          IN_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IN_VERSION:-}" ]; then
+            base="${IN_VERSION#v}"
+          else
+            # The merge/squash commit subject references the release/X.Y.Z branch.
+            subject="$(git log -1 --format='%s%n%b')"
+            base="$(echo "$subject" | grep -oE 'release/[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's#release/##')"
+          fi
+          echo "$base" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::could not derive a valid X.Y.Z to promote (got '${base:-}')"; exit 1; }
+
+          # A stable promotion must correspond to a beta candidate that was cut
+          # and (per the release/*->main PR gate) proven against consumers.
+          if [ -z "$(git tag -l "v${base}-beta."'*' | head -1)" ]; then
+            echo "::error::no v${base}-beta.* tag exists — refusing to promote a version that was never a beta candidate"
+            exit 1
+          fi
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve stable tag
+        id: ver
+        run: ./scripts/ci/resolve-version.sh stable "${{ steps.base.outputs.base }}"
+
+      - name: Create stable Release (no build, no asset)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --generate-notes
+
+      - name: Post-promotion reminder (manual maintainer steps)
+        run: |
+          {
+            echo "## Promoted ${{ steps.ver.outputs.tag }}"
+            echo ""
+            echo "Manual maintainer follow-up (not automated):"
+            echo "- Delete the merged \`release/${{ steps.base.outputs.base }}\` branch."
+            echo "- Merge \`main\` back into \`develop\` so the stable tag's history is in the integration branch."
+          } >> "$GITHUB_STEP_SUMMARY"
