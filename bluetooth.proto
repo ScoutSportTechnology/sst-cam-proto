@@ -42,6 +42,12 @@ package sst_cam;
 //       RecordingMetadata.is_raw/camera_index/capture_group_id (8-10) under a
 //       joint presence invariant, DeviceTelemetry.is_raw_capturing (14). All
 //       additive `optional`; no protocol_version bump.
+//     * #6 multicam/overlay: SetPreviewLayoutCommand (Command 56) +
+//       PreviewLayoutResponse (CommandResponse 24) for single|side-by-side
+//       preview; on-demand overlayed export — ExportOverlayedCommand (57) +
+//       PollExportCommand (58) + ExportJobResponse (CommandResponse 25);
+//       ResponseStatus.LIVE_SESSION_ACTIVE (4). All additive; no
+//       protocol_version bump.
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -112,6 +118,11 @@ message Command {
     // Defines the full visual design for overlays; firmware renders exactly
     // what this spec describes. Can be resent to change designs mid-session.
     PushOverlayLayoutCommand push_overlay_layout = 55;
+
+    // #6 multicam / overlay (see overlay-rendering.md + the multicam plan):
+    SetPreviewLayoutCommand  set_preview_layout = 56;  // single | side-by-side preview
+    ExportOverlayedCommand   export_overlayed   = 57;  // on-demand burn: L1 + overlay timeline
+    PollExportCommand        poll_export        = 58;  // poll an export job
   }
 
   reserved 20;
@@ -138,6 +149,8 @@ message CommandResponse {
     DeviceTelemetry         telemetry         = 14;
     MatchState              match_state       = 15;
     WifiDirectGroupResponse wifi_direct_group = 23;
+    PreviewLayoutResponse   preview_layout    = 24;  // reply to SetPreviewLayoutCommand
+    ExportJobResponse       export_job        = 25;  // reply to ExportOverlayed / PollExport
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -150,6 +163,73 @@ enum ResponseStatus {
   ERROR       = 1;
   TIMEOUT     = 2;
   UNSUPPORTED = 3;
+  // Retrieval/export refused because a match is live (recording and/or
+  // streaming). The on-demand overlay burn would contend with the live x264
+  // encode on the no-NVENC Orin Nano — retry once the session ends. #6.
+  LIVE_SESSION_ACTIVE = 4;
+}
+
+// ===========================================================================
+// 2b. #6 multicam / overlay — preview layout + on-demand overlayed export
+// ===========================================================================
+
+// Live preview composition. SINGLE = the chosen camera with overlay baked in
+// (the broadcast view; default). SIDE_BY_SIDE = cam0 | cam1 composited by the
+// firmware into one RTSP stream, clean (no overlay) — a "see both cameras"
+// monitoring view. Switched mid-session via SetPreviewLayoutCommand; the RTSP
+// URL/port are unchanged (only the composited frame geometry changes).
+enum PreviewLayout {
+  PREVIEW_LAYOUT_SINGLE       = 0;
+  PREVIEW_LAYOUT_SIDE_BY_SIDE = 1;
+}
+
+message SetPreviewLayoutCommand {
+  PreviewLayout layout = 1;
+}
+
+// Reply to SetPreviewLayoutCommand: the active layout plus the new frame
+// geometry the firmware now composites, so the app can size its preview box.
+message PreviewLayoutResponse {
+  PreviewLayout layout = 1;
+  uint32        width  = 2;
+  uint32        height = 3;
+}
+
+// On-demand overlayed export. Recordings store CLEAN post-processed video (L1)
+// plus an overlay timeline as DATA — never a burned-in copy. To retrieve the
+// overlaid version the app asks the firmware to render it on demand: the
+// firmware replays the overlay timeline onto L1, encodes L2, exposes it for one
+// download, then deletes it. REFUSED while a match is live (CommandResponse
+// status LIVE_SESSION_ACTIVE) — the software encode must not contend with the
+// live broadcast encode on the no-NVENC Orin Nano.
+message ExportOverlayedCommand {
+  // The clean recording to overlay — a final-match recording id, or a raw
+  // capture_group_id (see RecordingMetadata).
+  string recording_id = 1;
+}
+
+// Poll a running export job for completion.
+message PollExportCommand {
+  string job_id = 1;
+}
+
+enum ExportJobState {
+  EXPORT_JOB_UNKNOWN = 0;  // no such job (e.g. firmware restarted since the request)
+  EXPORT_JOB_PENDING = 1;  // queued
+  EXPORT_JOB_RUNNING = 2;  // burning L2
+  EXPORT_JOB_READY   = 3;  // done — `token` is set
+  EXPORT_JOB_FAILED  = 4;  // see CommandResponse.error_message
+}
+
+// Reply to BOTH ExportOverlayedCommand (a new job, state PENDING) and
+// PollExportCommand (the job's current state).
+message ExportJobResponse {
+  string         job_id = 1;
+  ExportJobState state  = 2;
+  // Set only when state == EXPORT_JOB_READY: a one-shot download token for the
+  // burned L2, identical transport to a normal recording download. The firmware
+  // deletes the L2 once the download completes or the token expires.
+  optional DownloadTokenResponse token = 3;
 }
 
 // ===========================================================================
