@@ -1,5 +1,15 @@
 # Overlay Rendering Semantics
 
+> **⚠️ #6 amendment (multicam/overlay): overlay is becoming firmware-only.**
+> Per the multicam/overlay plan, the **app stops rendering overlay** — on both
+> the live preview and playback. The firmware bakes overlay into the live/broadcast
+> stream and burns it on demand for export (see `ExportOverlayedCommand`); the app
+> only authors layouts and sends `PushOverlayLayoutCommand`. The **app↔firmware
+> visual-equivalence guarantee and its tolerances below are therefore retired** —
+> there is no second (app) renderer to match. The firmware **rendering semantics**
+> (coordinate space, text, shapes, color/opacity) remain normative for the single
+> firmware renderer. The app-side fixtures/SSIM checks no longer apply.
+
 > **This document is the normative source for how overlay layouts are rendered.**
 > Both consumers implement against it: the app (Flutter / Skia) and the firmware
 > (Cairo / Pango). It is part of the wire contract — it lives here, not in either
