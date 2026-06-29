@@ -106,6 +106,12 @@ message Command {
     SetWifiConfigCommand      set_wifi_config      = 40;
     SetStreamingConfigCommand set_streaming_config = 41;
 
+    // Internet uplink (ethernet / wifi STA) — the cloud-streaming path, separate
+    // from the WiFi-Direct preview link. Set persists + applies; Get reads back
+    // config + live status.
+    SetNetworkConfigCommand   set_network_config   = 42;
+    GetNetworkConfigCommand   get_network_config   = 43;
+
     FactoryResetCommand   factory_reset    = 50;
     FirmwareUpdateCommand firmware_update  = 51;
 
@@ -151,6 +157,7 @@ message CommandResponse {
     WifiDirectGroupResponse wifi_direct_group = 23;
     PreviewLayoutResponse   preview_layout    = 24;  // reply to SetPreviewLayoutCommand
     ExportJobResponse       export_job        = 25;  // reply to ExportOverlayed / PollExport
+    NetworkConfigResponse   network_config    = 26;  // reply to Set/GetNetworkConfig
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -540,6 +547,58 @@ message WifiDirectGroupResponse {
   uint32 preview_port   = 4;
   uint32 download_port  = 5;
   string role           = 6;
+}
+
+// ===========================================================================
+// 10b. Network uplink (cloud-streaming path — SEPARATE from WiFi-Direct)
+//
+// The camera reaches the internet (RTMP egress) over a configurable uplink:
+// ethernet and/or a WiFi STA, each enable/disable with DHCP-or-static IP. This
+// is independent of the WiFi-Direct GO that serves the phone its live preview.
+// `dhcp = true` means DHCP (address/gateway/dns ignored); `dhcp = false` means
+// static and `address` is CIDR ("10.0.0.5/24"). Fields map 1:1 to the firmware
+// uplink config (uplink-config.hpp).
+// ===========================================================================
+
+message EthernetUplinkConfig {
+  bool   enabled = 1;
+  bool   dhcp    = 2;
+  string address = 3;
+  string gateway = 4;
+  string dns     = 5;
+}
+
+message WifiUplinkConfig {
+  bool   enabled  = 1;
+  string ssid     = 2;
+  string password = 3;
+  bool   dhcp     = 4;
+  string address  = 5;
+  string gateway  = 6;
+  string dns      = 7;
+}
+
+message NetworkConfig {
+  EthernetUplinkConfig ethernet = 1;
+  WifiUplinkConfig     wifi     = 2;
+}
+
+// Set the camera's uplink config — persisted + applied. Reply: NetworkConfigResponse.
+message SetNetworkConfigCommand {
+  NetworkConfig config = 1;
+}
+
+// Read the camera's current uplink config + live status. Reply: NetworkConfigResponse.
+message GetNetworkConfigCommand {}
+
+// Current config echoed back plus per-interface live status (what the app shows).
+message NetworkConfigResponse {
+  NetworkConfig config = 1;
+
+  bool   ethernet_up      = 2;
+  string ethernet_address = 3;  // current CIDR; empty when down
+  bool   wifi_up          = 4;
+  string wifi_status      = 5;  // "connected" / "unavailable: ..." / "failed: ..."
 }
 
 // ===========================================================================
