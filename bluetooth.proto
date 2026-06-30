@@ -129,6 +129,7 @@ message Command {
     SetPreviewLayoutCommand  set_preview_layout = 56;  // single | side-by-side preview
     ExportOverlayedCommand   export_overlayed   = 57;  // on-demand burn: L1 + overlay timeline
     PollExportCommand        poll_export        = 58;  // poll an export job
+    RebootCommand            reboot             = 59;  // restart the camera (new command surface → protocol_version bump)
   }
 
   reserved 20;
@@ -250,6 +251,20 @@ message ListRecordingsCommand {}
 message FactoryResetCommand   {}
 message FirmwareUpdateCommand {}
 
+// Restart the camera. Parameterless by design — no BLE-derived data reaches the
+// reboot exec path. A new command surface, so firmware bumps
+// DeviceInfoResponse.protocol_version and the app gates the Reboot action on it.
+message RebootCommand {}
+
+// A capture/encode mode: resolution + frame rate. Used both as an app→camera
+// setting (RecordingControlCommand/StreamingControlCommand.quality) and a
+// camera→app capability advertisement (DeviceInfoResponse.supported_modes).
+message VideoQuality {
+  uint32 width  = 1;
+  uint32 height = 2;
+  uint32 fps    = 3;
+}
+
 // ===========================================================================
 // 4. Telemetry / device info
 // ===========================================================================
@@ -263,6 +278,10 @@ message DeviceInfoResponse {
                                 // contract version they were built against; on
                                 // mismatch, surface a clean version-skew error and
                                 // refuse the session — do NOT silently proceed.
+  // Capture/encode modes the firmware actually supports, so the app offers only
+  // real record/stream quality options instead of a blind dropdown. Empty on
+  // firmware that predates this field (app falls back to a disabled picker).
+  repeated VideoQuality supported_modes = 6;
 }
 
 message DeviceTelemetry {
@@ -397,6 +416,11 @@ enum MatchStatus {
 
 message RecordingControlCommand {
   RecordingAction action = 1;
+  // Optional record quality/fps, independent of the stream quality. Applied at
+  // session start by (re)configuring the encode pipeline; unset => firmware
+  // default. Does NOT affect the fixed-resolution raw dual-recording. The app
+  // offers only DeviceInfoResponse.supported_modes.
+  optional VideoQuality quality = 2;
 }
 
 // Independent raw dual-camera training capture, distinct from
@@ -439,6 +463,10 @@ enum RecordingAction {
 message StreamingControlCommand {
   StreamingAction action      = 1;
   string          destination = 2;
+  // Optional stream quality/fps, independent of the record quality (e.g. record
+  // 1080p while streaming 720p). Unset => firmware default. The app offers only
+  // DeviceInfoResponse.supported_modes.
+  optional VideoQuality quality = 3;
 }
 
 enum StreamingAction {
