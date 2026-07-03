@@ -133,6 +133,9 @@ message Command {
     ExportOverlayedCommand   export_overlayed   = 57;  // on-demand burn: L1 + overlay timeline
     PollExportCommand        poll_export        = 58;  // poll an export job
     RebootCommand            reboot             = 59;  // restart the camera (new command surface → protocol_version bump)
+
+    // Live per-channel white-balance calibration (diagnostic screen sliders).
+    SetCameraCalibrationCommand set_camera_calibration = 71;
   }
 
   reserved 20;
@@ -163,6 +166,7 @@ message CommandResponse {
     ExportJobResponse       export_job        = 25;  // reply to ExportOverlayed / PollExport
     NetworkConfigResponse   network_config    = 26;  // reply to Set/GetNetworkConfig
     CameraFocusResponse     camera_focus      = 27;  // reply to CameraFocusControlCommand
+    CameraCalibrationResponse camera_calibration = 28;  // reply to SetCameraCalibrationCommand
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -525,6 +529,29 @@ message CameraFocusResponse {
   CameraFocusMode mode = 1;
   optional uint32 focus_position = 2;  // last-commanded / current VCM code
   bool autofocus_available = 3;        // motorized VCM lens detected at boot
+}
+
+// Live per-channel white-balance gain calibration for the postprocessed frame
+// (record / stream / preview all pass through the postprocessor). The ArduCAM
+// IMX477 renders a magenta cast baked into the Argus ISP tuning that JetPack 7.2
+// cannot be re-tuned for (legacy camera_overrides.isp ignored; no .nito toolchain),
+// so the app's diagnostic Calibration screen drives these gains with live sliders
+// against the both-camera preview until neutral, then the values are persisted.
+// Gains multiply the demosaiced BGR channels (1.0 = identity). Applied to both
+// cameras (the cast is module-uniform). New command surface → protocol_version bump.
+message SetCameraCalibrationCommand {
+  float r_gain  = 1;
+  float g_gain  = 2;
+  float b_gain  = 3;
+  bool  enabled = 4;  // false bypasses correction entirely
+}
+
+// Echo of the applied calibration so the app can confirm + seed its sliders.
+message CameraCalibrationResponse {
+  float r_gain  = 1;
+  float g_gain  = 2;
+  float b_gain  = 3;
+  bool  enabled = 4;
 }
 
 message RecordingMetadata {
