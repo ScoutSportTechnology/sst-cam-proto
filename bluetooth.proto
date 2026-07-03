@@ -138,6 +138,8 @@ message Command {
     SetCameraCalibrationCommand set_camera_calibration = 71;
     // One-shot auto white-balance: measure the current frame + compute gains.
     AutoWhiteBalanceCommand     auto_white_balance     = 72;
+    // Manual camera selection (manual override for the future AI decision).
+    SetActiveCameraCommand      set_active_camera      = 73;
   }
 
   reserved 20;
@@ -169,6 +171,7 @@ message CommandResponse {
     NetworkConfigResponse   network_config    = 26;  // reply to Set/GetNetworkConfig
     CameraFocusResponse     camera_focus      = 27;  // reply to CameraFocusControlCommand
     CameraCalibrationResponse camera_calibration = 28;  // reply to SetCameraCalibrationCommand
+    ActiveCameraResponse    active_camera     = 29;  // reply to SetActiveCameraCommand
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -531,6 +534,18 @@ message CameraFocusResponse {
   CameraFocusMode mode = 1;
   optional uint32 focus_position = 2;  // last-commanded / current VCM code
   bool autofocus_available = 3;        // motorized VCM lens detected at boot
+}
+
+// Manual camera selection — the human override of the (future AI) camera
+// decision. Picks which physical camera's frame feeds the postprocessed output
+// (record / stream / single-preview). Until the AI decision stack lands this IS
+// the decision; afterwards it's the manual override. camera_index 0/1.
+message SetActiveCameraCommand {
+  uint32 camera_index = 1;
+}
+
+message ActiveCameraResponse {
+  uint32 camera_index = 1;
 }
 
 // Live per-channel white-balance gain calibration for the postprocessed frame
