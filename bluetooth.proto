@@ -546,6 +546,11 @@ message SetCameraCalibrationCommand {
   float g_gain  = 2;
   float b_gain  = 3;
   bool  enabled = 4;  // false bypasses correction entirely
+  // Image tuning, applied in the postprocessor after the WB gain. Identity values
+  // (saturation=1, contrast=1, brightness=0) leave the frame unchanged.
+  float saturation = 5;  // 0=greyscale, 1=unchanged, >1 more vivid
+  float contrast   = 6;  // 1=unchanged; scales around mid-grey
+  float brightness = 7;  // 0=unchanged; additive, in [-1,1] of full range
 }
 
 // Echo of the applied calibration so the app can confirm + seed its sliders.
@@ -555,6 +560,9 @@ message CameraCalibrationResponse {
   float g_gain  = 2;
   float b_gain  = 3;
   bool  enabled = 4;
+  float saturation = 5;
+  float contrast   = 6;
+  float brightness = 7;
 }
 
 // One-shot auto white-balance. The firmware averages the current postprocessed
