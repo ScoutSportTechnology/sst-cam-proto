@@ -136,6 +136,8 @@ message Command {
 
     // Live per-channel white-balance calibration (diagnostic screen sliders).
     SetCameraCalibrationCommand set_camera_calibration = 71;
+    // One-shot auto white-balance: measure the current frame + compute gains.
+    AutoWhiteBalanceCommand     auto_white_balance     = 72;
   }
 
   reserved 20;
@@ -547,12 +549,20 @@ message SetCameraCalibrationCommand {
 }
 
 // Echo of the applied calibration so the app can confirm + seed its sliders.
+// Also the reply to AutoWhiteBalanceCommand — carries the firmware-computed gains.
 message CameraCalibrationResponse {
   float r_gain  = 1;
   float g_gain  = 2;
   float b_gain  = 3;
   bool  enabled = 4;
 }
+
+// One-shot auto white-balance. The firmware averages the current postprocessed
+// frame (grey-world: point the camera at a white/grey surface) and computes the
+// per-channel gains that neutralize it, applies them live, and returns them in a
+// CameraCalibrationResponse so the app can seed its sliders. No fields — the
+// measurement is of whatever the camera currently sees.
+message AutoWhiteBalanceCommand {}
 
 message RecordingMetadata {
   string id           = 1;
