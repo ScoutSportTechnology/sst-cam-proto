@@ -113,12 +113,30 @@ Polling responsibilities (all on the app side):
 
 | Data | Command | Suggested interval |
 | ---- | ------- | ----------------- |
-| Telemetry | `GetTelemetryCommand` | 1 s |
-| Match state | `GetMatchStateCommand` | deferred in v1 (telemetry covers operational needs) |
+| Telemetry (incl. per-camera health) | `GetTelemetryCommand` | 1 s |
+| Match state (incl. clock drift correction) | `GetMatchStateCommand` | 2 s while a session runs |
 | Thumbnail | `ThumbnailRequest` | on demand |
 
 The firmware MUST respond to every command. If it cannot, it MUST send a
 `CommandResponse` with `status = ERROR` and a descriptive `error_message`.
+
+### Connect handshake (state-health cycle)
+
+A session **outlives the BLE connection**: the firmware keeps
+recording/streaming through app disconnects (bounded by
+`PushSessionConfigCommand.auto_stop_minutes`) and keeps the WiFi-Direct group up
+while a session is active. Every connect — first connect, manual reconnect, app
+relaunch, camera reboot — runs the same canonical sequence:
+
+1. `GetDeviceInfoCommand` — protocol gate (`protocol_version` check)
+2. `SetDeviceTimeCommand` — push the phone wall clock
+3. `GetSessionSnapshotCommand` — read the firmware's actual state
+4. Rehydrate UI from the snapshot (selections, activity, match clock)
+5. Reconcile app-owned intent via `SetMatchStateCommand` (absolute — never
+   replay `ScoreUpdateCommand` deltas after a gap)
+
+`StartWifiDirectCommand` is idempotent: while the group is up it returns the
+existing credentials without re-forming the group.
 
 ---
 
