@@ -64,6 +64,14 @@ package sst_cam;
 //       PushSessionConfigCommand.auto_stop_minutes (16);
 //       ResponseStatus.DEVICE_INOPERABLE (5) for health-gated start rejections.
 //       New command surface → protocol_version bump (firmware-owned).
+//     * Proxy internalization (same cycle): the dual-camera proxy capture is
+//       firmware-automatic (rides record/stream) and invisible to the app —
+//       retired RawCaptureControlCommand (34), DeviceTelemetry.is_raw_capturing
+//       (14), snapshot is_raw_capturing (6), RecordingMetadata.is_raw/
+//       camera_index/capture_group_id (8-10), RecordingControlCommand.
+//       capture_group_id (3); all numbers+names reserved. Proxy footage is
+//       retrieved on-device by match id. Overlay exports (L2) persist in the
+//       match folder beside L1 (no exports dir, no post-download delete).
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -117,7 +125,6 @@ message Command {
     StreamingControlCommand  streaming_control  = 31;
     ListRecordingsCommand    list_recordings    = 32;
     DownloadRequestCommand   download_request   = 33;
-    RawCaptureControlCommand raw_capture        = 34;
 
     SetWifiConfigCommand      set_wifi_config      = 40;
     SetStreamingConfigCommand set_streaming_config = 41;
@@ -171,6 +178,12 @@ message Command {
 
   reserved 20;
   reserved "match_config";
+  // Internal dual-camera proxy capture is firmware-automatic (rides the
+  // record/stream lifecycle) and invisible to the app — the control verb was
+  // retired in the state-health cycle. Proxy footage is retrieved on-device
+  // (ssh, by match id), never over this contract.
+  reserved 34;
+  reserved "raw_capture";
   reserved 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70;
   reserved "list_teams", "list_team_matches", "create_team", "update_team",
            "delete_team", "set_team_hidden", "add_player", "update_player",
@@ -250,15 +263,17 @@ message PreviewLayoutResponse {
 }
 
 // On-demand overlayed export. Recordings store CLEAN post-processed video (L1)
-// plus an overlay timeline as DATA — never a burned-in copy. To retrieve the
-// overlaid version the app asks the firmware to render it on demand: the
-// firmware replays the overlay timeline onto L1, encodes L2, exposes it for one
-// download, then deletes it. REFUSED while a match is live (CommandResponse
-// status LIVE_SESSION_ACTIVE) — the software encode must not contend with the
-// live broadcast encode on the no-NVENC Orin Nano.
+// plus an overlay timeline as DATA — never a burned-in copy at record time. To
+// retrieve the overlaid version the app asks the firmware to render it on
+// demand: the firmware replays the overlay timeline onto L1, encodes L2, and
+// SAVES IT PERSISTENTLY in the same match folder as L1 (no separate exports
+// dir, no post-download deletion — state-health cycle). The L2 then appears in
+// RecordingListResponse and downloads like any recording; re-exporting an
+// already-burned recording returns the existing file. REFUSED while a match is
+// live (CommandResponse status LIVE_SESSION_ACTIVE) — the software encode must
+// not contend with the live broadcast encode on the no-NVENC Orin Nano.
 message ExportOverlayedCommand {
-  // The clean recording to overlay — a final-match recording id, or a raw
-  // capture_group_id (see RecordingMetadata).
+  // The clean recording to overlay — a final-match recording id.
   string recording_id = 1;
 }
 
@@ -357,10 +372,9 @@ message DeviceTelemetry {
   // a real 0% reading via has_battery_level_pct().
   optional uint32 battery_level_pct = 13;
 
-  // Raw dual-camera capture running state, mirroring is_recording /
-  // is_streaming. absent ⇒ false. Reflects RawCaptureControlCommand lifecycle,
-  // independent of is_recording.
-  optional bool is_raw_capturing = 14;
+  // Retired: internal proxy capture is invisible to the app (no status field).
+  reserved 14;
+  reserved "is_raw_capturing";
 
   // Per-camera frame-truth health (state-health cycle). Index matches the
   // physical nvarguscamerasrc sensor-id (same referent as
@@ -509,46 +523,12 @@ message RecordingControlCommand {
   // default. Does NOT affect the fixed-resolution raw dual-recording. The app
   // offers only DeviceInfoResponse.supported_modes.
   optional VideoQuality quality = 2;
-  // Training-proxy pairing key, minted by the APP and sent on RECORDING_START.
-  // When present, firmware couples the always-on dual-camera training proxy to
-  // THIS record lifecycle (start the proxy on START, stop on STOP) and uses the
-  // id to (a) NAME the final MP4 on disk and (b) stamp the two proxy files'
-  // RecordingMetadata (is_raw=true, camera_index, capture_group_id). It is NOT
-  // written into the final MP4's own RecordingMetadata — that stays
-  // is_raw=false with capture_group_id absent (see RecordingMetadata JOINT
-  // INVARIANT below). MUST be absent on RECORDING_STOP. Opaque string (UUID v4
-  // recommended). Additive/optional: unset => record runs with no coupled
-  // proxy (backward-compatible with pre-coupling apps).
-  optional string capture_group_id = 3;
-}
-
-// Independent raw dual-camera training capture, distinct from
-// RecordingControlCommand. "RAW_DUAL" = both physical sensors captured raw in
-// one session, yielding two per-camera files (camera_index 0 and 1) paired by
-// a shared capture_group_id. Runs concurrently with final-match recording
-// (recording_control) and streaming (streaming_control) — its lifecycle does
-// not touch is_recording.
-//
-// Reuses RecordingAction but only RECORDING_START / RECORDING_STOP are honored.
-// `action` is proto3 `optional` so firmware can distinguish a genuinely unset
-// field (has_action()==false) from an explicit value. The app MUST always set
-// it; firmware behavior (not this contract) answers an absent `action` or the
-// zero-value RECORDING_ACTION_UNKNOWN, plus PAUSE / RESUME, with UNSUPPORTED /
-// ERROR — it must NEVER treat absent/UNKNOWN as START.
-//
-// capture_group_id is minted by the APP and sent on START; firmware stamps it
-// onto both per-camera files' RecordingMetadata (see RecordingMetadata fields
-// 8–10). The app MUST set it on RECORDING_START and firmware MUST reject a
-// START lacking it; it MUST be absent on RECORDING_STOP and firmware MUST
-// ignore it there. Treat it as an OPAQUE string: firmware MUST stamp it onto
-// both files verbatim — no inspection, truncation, or re-encoding (UUID v4
-// recommended; compared only by equality). This is the app-as-source-of-truth
-// pairing key, so the response stays status-only (no payload) — like
-// RecordingControlCommand, this is NOT in the CommandResponse payload oneof.
-// The app already knows the id it minted, so no payload is needed to learn it.
-message RawCaptureControlCommand {
-  optional RecordingAction action = 1;
-  optional string capture_group_id = 2;
+  // Retired (state-health cycle): the app-minted proxy pairing key. The
+  // internal dual-camera proxy now rides the record/stream lifecycle
+  // automatically and pairs with its match on-device by
+  // PushSessionConfigCommand.match_uuid — nothing to mint app-side.
+  reserved 3;
+  reserved "capture_group_id";
 }
 
 enum RecordingAction {
@@ -671,23 +651,12 @@ message RecordingMetadata {
   string teams        = 6;
   string thumbnail_id = 7;
 
-  // Raw dual-camera capture identity (see RawCaptureControlCommand). Absent on
-  // a final-match recording. JOINT INVARIANT: when is_raw == true, BOTH
-  // camera_index and capture_group_id MUST be present; when is_raw is
-  // absent/false, BOTH MUST be absent. A consumer MUST treat a raw file lacking
-  // either as malformed.
-  //
-  // is_raw: absent ⇒ false ⇒ final recording.
-  optional bool   is_raw           = 8;
-  // camera_index: IDENTITY KEY, 0/1, pinned to the physical nvarguscamerasrc
-  // sensor-id (0 = primary sensor, 1 = secondary). Same referent on both
-  // stacks — front/back must NOT be assumed oppositely. Meaningful only when
-  // is_raw == true.
-  optional uint32 camera_index     = 9;
-  // capture_group_id: pairs the cam-0 / cam-1 files of one raw session. Equals
-  // the app-minted id sent on RawCaptureControlCommand START. Absent for final
-  // recordings.
-  optional string capture_group_id = 10;
+  // Retired (state-health cycle): the internal dual-camera proxy footage is
+  // firmware-internal — proxy files are excluded from RecordingListResponse
+  // entirely, so the marker fields lost their purpose. Proxy files pair with
+  // their match on-device by match_uuid (folder layout), not over the wire.
+  reserved 8, 9, 10;
+  reserved "is_raw", "camera_index", "capture_group_id";
 }
 
 message RecordingListResponse {
@@ -748,11 +717,12 @@ message PushSessionConfigCommand {
 
   // Unsupervised-session safety net (state-health cycle): minutes with no app
   // connection after which the firmware finalizes the session cleanly (recording
-  // EOS'd, streams stopped, raw capture stopped, WiFi group torn down) and
-  // records a LastSessionSummary with SESSION_END_AUTO_STOP. Covers recording,
-  // raw capture, AND streaming-only sessions; an idle group with no app times
-  // out on the same clock. Absent ⇒ firmware default 30. App-configurable;
-  // re-pushed mid-session when the operator changes the setting.
+  // EOS'd — including its internal dual-camera proxy — streams stopped, WiFi
+  // group torn down) and records a LastSessionSummary with
+  // SESSION_END_AUTO_STOP. Covers recording and streaming-only sessions; an
+  // idle group with no app times out on the same clock. Absent ⇒ firmware
+  // default 30. App-configurable; re-pushed mid-session when the operator
+  // changes the setting.
   optional uint32 auto_stop_minutes = 16;
 }
 
@@ -826,10 +796,12 @@ message SessionSnapshotResponse {
   optional uint32        active_camera_index = 2;  // 0/1, sensor-id referent
   optional PreviewLayout preview_layout      = 3;
 
-  // Activity flags — same sources as DeviceTelemetry 11/12/14.
+  // Activity flags — same sources as DeviceTelemetry 11/12.
   optional bool is_recording     = 4;
   optional bool is_streaming     = 5;
-  optional bool is_raw_capturing = 6;
+  // Retired: internal proxy capture is invisible to the app.
+  reserved 6;
+  reserved "is_raw_capturing";
 
   // Monotonic seconds since RECORDING_START of the running recording; absent
   // when not recording. Drives the app's recording-duration display after a
