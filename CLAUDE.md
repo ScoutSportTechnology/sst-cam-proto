@@ -16,7 +16,7 @@ a change lands in two stacks at once. Treat every edit as a contract amendment.
 
 | File | Contents |
 | ---- | -------- |
-| `bluetooth.proto` | All BLE control schema — framing (`ChunkedPayload`/`ChunkAck`), `Command`/`CommandResponse` envelopes, telemetry, match events, recording/streaming, session push, WiFi Direct handshake |
+| `bluetooth.proto` | All BLE control schema — framing (`ChunkedPayload`/`ChunkAck`), `Command`/`CommandResponse` envelopes, telemetry (incl. per-camera health), match events, recording/streaming, session push, session snapshot / reconnect handshake, WiFi Direct handshake |
 | `wifi.proto` | WiFi-only descriptors — RTSP preview descriptor, preview heartbeat |
 | `overlay-rendering.md` | **Normative** overlay rendering semantics both stacks must match byte-for-pixel: coordinate space, text layout, shapes, color/opacity, tolerance + reference fixtures |
 | `README.md` | Developer quick-reference: GATT UUIDs, channel split, pull model, MTU/chunking, versioning |
@@ -30,6 +30,10 @@ rules both consumers must match; app repo = how firmware should behave.
 
 - **Pull model.** The app always initiates; firmware never pushes unsolicited
   data. Every exchange is `Command → CommandResponse`, matched by `correlation_id`.
+  The reconnect handshake (state-health cycle) is app-initiated and fits the pull
+  model: protocol gate → `SetDeviceTime` → `GetSessionSnapshot` → rehydrate →
+  reconcile via absolute `SetMatchState`. Canonical order documented in
+  `bluetooth.proto` §9b and README — both consumers implement it identically.
 - **Two GATT characteristics only** — Command Write + Command Response (notify).
   No per-data-type notification characteristics. See README for UUIDs.
 - **Everything is chunked.** All messages ride the `ChunkedPayload` envelope;

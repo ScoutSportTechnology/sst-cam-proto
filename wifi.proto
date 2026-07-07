@@ -10,7 +10,8 @@ package sst_cam;
 // over BLE. This file covers the WiFi-only data-plane descriptors.
 //
 // Data-plane stack:
-//   Live preview: RTSP H.264 (NVENC) via gst-rtsp-server
+//   Live preview: RTSP H.264 (software x264 — the Orin Nano has no NVENC)
+//                 via gst-rtsp-server
 //                 URL: rtsp://<group_owner_ip>:<preview_port>/preview
 //   Downloads:    HTTP/1.1 byte-range requests authenticated with Bearer token
 //                 Token obtained via DownloadRequestCommand over BLE
