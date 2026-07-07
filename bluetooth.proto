@@ -16,11 +16,19 @@ package sst_cam;
 //
 // Architecture — app is source of truth:
 //   The app owns all business data (users, teams, rosters, match configs,
-//   streaming destinations). The camera is a stateless executor: it receives
-//   a session config once per session, reacts to events pushed by the app
-//   (recording control, match events, score updates), and produces files.
+//   streaming destinations) and all desired state (what should be running).
 //   The camera NEVER pushes unsolicited data and NEVER persists business data
 //   across sessions. See docs/firmware-spec.md for the full contract.
+//
+//   Runtime split (state-health cycle, 2026-07): the camera IS authoritative
+//   for ACTUAL capture state while a session runs — an active session survives
+//   BLE disconnects and keeps executing unsupervised (bounded by
+//   PushSessionConfigCommand.auto_stop_minutes). On every connect the app runs
+//   the canonical handshake:
+//     GetDeviceInfoCommand (protocol gate) -> SetDeviceTimeCommand ->
+//     GetSessionSnapshotCommand -> rehydrate UI from the snapshot ->
+//     reconcile app-owned intent (SetMatchStateCommand).
+//   Both consumers implement this exact order.
 //
 // History:
 //   Consolidated from six smaller files (command, telemetry, match, recording,
@@ -48,6 +56,14 @@ package sst_cam;
 //       PollExportCommand (58) + ExportJobResponse (CommandResponse 25);
 //       ResponseStatus.LIVE_SESSION_ACTIVE (4). All additive; no
 //       protocol_version bump.
+//     * State-health cycle: reconnect handshake — GetSessionSnapshotCommand
+//       (Command 45) + SessionSnapshotResponse (CommandResponse 30), absolute
+//       SetMatchStateCommand (46), SetDeviceTimeCommand (47);
+//       MatchState.elapsed_seconds/clock_running/match_uuid (9-11);
+//       DeviceTelemetry per-camera health (15-16);
+//       PushSessionConfigCommand.auto_stop_minutes (16);
+//       ResponseStatus.DEVICE_INOPERABLE (5) for health-gated start rejections.
+//       New command surface → protocol_version bump (firmware-owned).
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -115,6 +131,17 @@ message Command {
     // Motorized-focus control (continuous AF / manual position on the VCM lens).
     CameraFocusControlCommand camera_focus         = 44;
 
+    // Reconnect handshake (state-health cycle) — see the canonical handshake
+    // order in the header. Snapshot is a pure read of firmware ACTUAL state.
+    GetSessionSnapshotCommand get_session_snapshot = 45;
+    // Absolute match-state overwrite for post-disconnect reconciliation.
+    // ScoreUpdateCommand stays the live incremental path; deltas replayed after
+    // a gap double-apply, so reconciliation MUST use this instead.
+    SetMatchStateCommand      set_match_state      = 46;
+    // App pushes phone wall clock right after the protocol gate so device-local
+    // timestamps (file times, summaries, logs) are trustworthy pre-NTP.
+    SetDeviceTimeCommand      set_device_time      = 47;
+
     FactoryResetCommand   factory_reset    = 50;
     FirmwareUpdateCommand firmware_update  = 51;
 
@@ -172,6 +199,7 @@ message CommandResponse {
     CameraFocusResponse     camera_focus      = 27;  // reply to CameraFocusControlCommand
     CameraCalibrationResponse camera_calibration = 28;  // reply to SetCameraCalibrationCommand
     ActiveCameraResponse    active_camera     = 29;  // reply to SetActiveCameraCommand
+    SessionSnapshotResponse session_snapshot  = 30;  // reply to GetSessionSnapshotCommand
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -188,6 +216,11 @@ enum ResponseStatus {
   // streaming). The on-demand overlay burn would contend with the live x264
   // encode on the no-NVENC Orin Nano — retry once the session ends. #6.
   LIVE_SESSION_ACTIVE = 4;
+  // Start-class command (recording/streaming/raw-capture START) refused because
+  // a camera is not healthy (CameraHealth != CAMERA_HEALTH_OK). Stop/finalize,
+  // downloads, diagnostics reads, StartWifiDirect, and reboot are NEVER gated —
+  // the operator must always be able to end a session and retrieve footage.
+  DEVICE_INOPERABLE = 5;
 }
 
 // ===========================================================================
@@ -291,6 +324,12 @@ message DeviceInfoResponse {
                                 // contract version they were built against; on
                                 // mismatch, surface a clean version-skew error and
                                 // refuse the session — do NOT silently proceed.
+                                // The value is firmware-populated (no constant in
+                                // this repo). State-health cycle (snapshot /
+                                // set-match-state / set-device-time commands) is
+                                // new command surface → firmware increments this
+                                // and the app gates on the new value, shipped as a
+                                // lockstep firmware+app release.
   // Capture/encode modes the firmware actually supports, so the app offers only
   // real record/stream quality options instead of a blind dropdown. Empty on
   // firmware that predates this field (app falls back to a disabled picker).
@@ -322,6 +361,26 @@ message DeviceTelemetry {
   // is_streaming. absent ⇒ false. Reflects RawCaptureControlCommand lifecycle,
   // independent of is_recording.
   optional bool is_raw_capturing = 14;
+
+  // Per-camera frame-truth health (state-health cycle). Index matches the
+  // physical nvarguscamerasrc sensor-id (same referent as
+  // RecordingMetadata.camera_index). Absent ⇒ firmware predates health
+  // reporting — consumers render "unreported", never fabricate OK.
+  optional CameraHealth camera0_health = 15;
+  optional CameraHealth camera1_health = 16;
+}
+
+// Frame-truth per-camera health. OK requires frames actually flowing — a
+// pipeline in PLAYING that delivers no samples is NOT ok. RECOVERING = stalled,
+// watchdog restart pending/in progress (transient ~50s Argus stalls live here;
+// UIs show a soft indicator, NOT "inoperable"). DOWN = restart attempts for
+// this camera completed and failed — the device is inoperable for capture
+// (start-class commands are refused with DEVICE_INOPERABLE).
+enum CameraHealth {
+  CAMERA_HEALTH_UNKNOWN    = 0;
+  CAMERA_HEALTH_OK         = 1;
+  CAMERA_HEALTH_RECOVERING = 2;
+  CAMERA_HEALTH_DOWN       = 3;
 }
 
 enum WifiState {
@@ -406,12 +465,28 @@ message BannerEventCommand {
 message MatchState {
   MatchStatus status           = 1;
   uint32      current_period   = 2;
-  uint32      time_remaining_s = 3;
+  uint32      time_remaining_s = 3;  // clamped at 0 once past period length — lossy;
+                                     // consumers needing truth past period end use
+                                     // elapsed_seconds (9) instead.
   uint32      score_a          = 4;
   uint32      score_b          = 5;
   string      team_a_id        = 6;
   string      team_b_id        = 7;
-  uint64      updated_at       = 8;  // Unix epoch milliseconds (wall clock).
+  uint64      updated_at       = 8;  // Unix epoch milliseconds (wall clock; trustworthy
+                                     // only after SetDeviceTimeCommand or NTP).
+
+  // State-health cycle additions — all `optional` (absent on older firmware).
+  // Monotonic seconds since period start, ticked by the firmware's own runtime
+  // loop; NOT clamped at period length. The firmware clock is the only clock
+  // that runs through an app disconnect, so ON RECONNECT IT WINS — the app
+  // adopts this value (and corrects UI-timer drift from it on every poll).
+  optional uint32 elapsed_seconds = 9;
+  // Whether the display clock is currently ticking (MATCH_CLOCK_PAUSE/RESUME).
+  optional bool clock_running = 10;
+  // The PushSessionConfigCommand.match_uuid this state belongs to. The app keys
+  // scoreboard persistence and rejoin decisions on (device_id, match_uuid) —
+  // never rehydrate one match's data against another's session.
+  optional string match_uuid = 11;
 }
 
 enum MatchStatus {
@@ -670,12 +745,149 @@ message PushSessionConfigCommand {
   string team_b_name      = 13;
   string team_a_color_hex = 14;
   string team_b_color_hex = 15;
+
+  // Unsupervised-session safety net (state-health cycle): minutes with no app
+  // connection after which the firmware finalizes the session cleanly (recording
+  // EOS'd, streams stopped, raw capture stopped, WiFi group torn down) and
+  // records a LastSessionSummary with SESSION_END_AUTO_STOP. Covers recording,
+  // raw capture, AND streaming-only sessions; an idle group with no app times
+  // out on the same clock. Absent ⇒ firmware default 30. App-configurable;
+  // re-pushed mid-session when the operator changes the setting.
+  optional uint32 auto_stop_minutes = 16;
+}
+
+// ===========================================================================
+// 9b. Session snapshot / reconnect handshake (state-health cycle)
+//
+// A session OUTLIVES the BLE connection: the firmware keeps recording /
+// streaming / raw-capturing through app disconnects (bounded by
+// auto_stop_minutes) and keeps the WiFi-Direct group up while the session is
+// active — a redundant StartWifiDirectCommand while the group is up returns
+// the EXISTING group's credentials without re-forming it (group re-formation
+// disrupts CSI/Argus capture on the shared-radio Jetson).
+//
+// Every connect runs the same handshake regardless of history (first connect,
+// manual reconnect, app relaunch, camera reboot):
+//   1. GetDeviceInfoCommand      — protocol gate
+//   2. SetDeviceTimeCommand      — fix device wall clock
+//   3. GetSessionSnapshotCommand — read ACTUAL state (this section)
+//   4. app rehydrates UI from the snapshot (selections, activity, match clock)
+//   5. app reconciles intent: SetMatchStateCommand (app scores are authority —
+//      deltas made while disconnected never reached the firmware; the firmware
+//      clock is authority — it is the only clock that ran)
+// ===========================================================================
+
+message GetSessionSnapshotCommand {}
+
+// Firmware session lifecycle, one axis of the snapshot. FINALIZING is a real,
+// observable state: finalize (EOS, stream stop, summary write) is claimed
+// exactly once; a snapshot read during it reports FINALIZING rather than a
+// torn intermediate.
+enum SessionPhase {
+  SESSION_PHASE_UNKNOWN = 0;
+  SESSION_IDLE          = 1;
+  SESSION_CONFIGURED    = 2;  // session config pushed
+  SESSION_READY         = 3;  // configured + overlay, not yet recording
+  SESSION_RECORDING     = 4;
+  SESSION_FINALIZING    = 5;
+}
+
+// Why the previous session ended. Carried in LastSessionSummary so a
+// reconnecting app can explain "ended while away" to the operator.
+enum SessionEndReason {
+  SESSION_END_UNKNOWN        = 0;
+  SESSION_END_APP_STOP       = 1;  // normal app-commanded stop
+  SESSION_END_AUTO_STOP      = 2;  // auto_stop_minutes elapsed unsupervised
+  SESSION_END_CAMERA_FAILURE = 3;  // camera went DOWN mid-recording; finalized cleanly
+  SESSION_END_REBOOT         = 4;  // boot-time scan found an orphaned recording
+                                   // (crash/power loss; file_valid likely false)
+}
+
+// How the previous session ended — populated in SessionSnapshotResponse ONLY
+// when session_phase == SESSION_IDLE and a previous session exists. The app
+// uses it only when match_uuid equals its persisted match's uuid.
+message LastSessionSummary {
+  string           match_uuid        = 1;
+  SessionEndReason end_reason        = 2;
+  // Match clock (monotonic seconds, MatchState.elapsed_seconds semantics) at
+  // the moment of finalize — "saved at 47:12".
+  optional uint32  end_clock_seconds = 3;
+  // Finalized MP4 is present and playable (moov written). false for orphans.
+  optional bool    file_valid        = 4;
+}
+
+// The firmware's ACTUAL state, read at connect. Pure read — no side effects.
+// Every field `optional` where absence is meaningful; units pinned per field.
+message SessionSnapshotResponse {
+  SessionPhase session_phase = 1;
+
+  // Current selections — the app ADOPTS these instead of force-resetting
+  // (replaces the old reset-to-defaults-on-connect behavior on both stacks).
+  optional uint32        active_camera_index = 2;  // 0/1, sensor-id referent
+  optional PreviewLayout preview_layout      = 3;
+
+  // Activity flags — same sources as DeviceTelemetry 11/12/14.
+  optional bool is_recording     = 4;
+  optional bool is_streaming     = 5;
+  optional bool is_raw_capturing = 6;
+
+  // Monotonic seconds since RECORDING_START of the running recording; absent
+  // when not recording. Drives the app's recording-duration display after a
+  // rejoin (epoch timestamps are NOT used — device wall clock may predate
+  // SetDeviceTimeCommand).
+  optional uint32 recording_elapsed_seconds = 7;
+
+  // Absolute match state incl. elapsed_seconds / clock_running / match_uuid
+  // (fields 9-11). Absent when no session config was ever pushed.
+  optional MatchState match_state = 8;
+
+  // Frame-truth health, same semantics as DeviceTelemetry 15/16.
+  optional CameraHealth camera0_health = 9;
+  optional CameraHealth camera1_health = 10;
+
+  // Present ONLY when session_phase == SESSION_IDLE and a previous session
+  // exists (see LastSessionSummary).
+  optional LastSessionSummary last_session = 11;
+
+  // WiFi-Direct group currently up (rejoin path: StartWifiDirectCommand is
+  // idempotent and returns the existing credentials).
+  optional bool wifi_group_up = 12;
+}
+
+// Absolute match-state overwrite — the reconciliation verb. Every field
+// `optional`: absent fields are left UNTOUCHED on the firmware (partial set is
+// legal). This is NOT a replacement for ScoreUpdateCommand (live incremental
+// path) — it exists because replaying deltas after a connection gap
+// double-applies.
+message SetMatchStateCommand {
+  optional uint32      score_a         = 1;
+  optional uint32      score_b         = 2;
+  optional uint32      current_period  = 3;
+  optional uint32      elapsed_seconds = 4;  // MatchState.elapsed_seconds semantics
+  optional bool        clock_running   = 5;
+  optional MatchStatus status          = 6;
+}
+
+// Phone wall clock push, sent right after the protocol gate on every connect.
+// Firmware applies it to the system clock (and enables opportunistic NTP when
+// an uplink exists). Session/match clocks on the wire stay monotonic/relative —
+// this fixes device-LOCAL timestamps only (file mtimes, summary fields, logs).
+// Reply is status-only (no payload). Firmware rejects implausible values
+// (pre-2020 epoch) with ERROR and leaves the clock untouched.
+message SetDeviceTimeCommand {
+  uint64 epoch_ms = 1;  // Unix epoch milliseconds (phone wall clock)
 }
 
 // ===========================================================================
 // 10. WiFi Direct negotiation (BLE-transported)
 // ===========================================================================
 
+// Idempotent (state-health cycle): when the group is already up — the rejoin
+// path, since an active session keeps the group alive across app disconnects —
+// firmware returns the EXISTING group's credentials in WifiDirectGroupResponse
+// without touching wpa_supplicant. Group re-formation disrupts CSI/Argus
+// capture on the shared-radio Jetson and MUST NOT happen mid-session.
+// StartWifiDirect is never gated by DEVICE_INOPERABLE (downloads need the group).
 message StartWifiDirectCommand {}
 
 message StopWifiDirectCommand {}
