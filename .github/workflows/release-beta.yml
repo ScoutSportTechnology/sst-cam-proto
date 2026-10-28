@@ -5,14 +5,15 @@ name: release-beta
 # release-branches ruleset's required status checks; on push/dispatch to
 # release/* it mints a beta prerelease.
 #
-# beta tag/release: the base X.Y.Z is taken from the branch name;
-# resolve-version.sh appends the next -beta.N counter. Betas iterate on the
+# beta/rc tag/release: the base X.Y.Z is taken from the branch name; the shared
+# resolve-version action (mode: release) appends the next -beta.N, or -rc.N once
+# promote-rc.yml re-tagged the hardware-validated beta as rc.1. Betas iterate on the
 # branch — each push bumps the counter. The beta tag's commit is what firmware +
 # app vendor (submodule pin) to prove the candidate contract in integration
 # before promotion to stable. Artifact-free: the tag IS the release, NO asset.
 #
-# Fail fast if the branch is not named release/X.Y.Z: resolve-version.sh rejects
-# a base that is not a valid X.Y.Z, so a malformed branch name exits non-zero.
+# Fail fast if the branch is not named release/X.Y.Z: the resolver rejects a base
+# that is not a valid X.Y.Z, so a malformed branch name exits non-zero.
 #
 # Uses the default GITHUB_TOKEN (contents:write); the "Release Tags" ruleset
 # permits compliant v* tags.
@@ -93,27 +94,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history + tags so resolve-version.sh sees existing -beta.N
-          # counters for this base.
+          # Full history + tags so the resolver sees this base's -beta.N / -rc.N
+          # counters.
           fetch-depth: 0
 
-      - name: Resolve next beta tag
+      - name: Resolve next beta or rc tag
         id: ver
-        run: |
-          set -euo pipefail
-          # Branch name is release/X.Y.Z — derive the base; the script rejects a
-          # non-X.Y.Z base, so an unexpected branch shape fails fast here.
-          base="${GITHUB_REF_NAME#release/}"
-          ./scripts/ci/resolve-version.sh beta "$base"
+        # mode: release takes X.Y.Z from the release/X.Y.Z branch name (fails fast
+        # on any other shape) and mints beta.N, or rc.N once promote-rc ran.
+        uses: ScoutSportTechnology/.github/actions/resolve-version@v1.1.0
+        with:
+          mode: release
 
-      - name: Create beta prerelease (no asset)
+      - name: Publish beta/rc prerelease (no asset)
         if: steps.ver.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --prerelease \
-            --target "$GITHUB_SHA" \
-            --title "${{ steps.ver.outputs.tag }}" \
-            --generate-notes
+        uses: ScoutSportTechnology/.github/actions/publish-release@v1.1.0
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          prerelease: "true"

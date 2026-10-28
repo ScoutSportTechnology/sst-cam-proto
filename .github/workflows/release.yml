@@ -1,22 +1,15 @@
 name: release
 
-# Promote a beta-validated contract to stable on push (merge) to main. Derives
-# X.Y.Z from the merged release/X.Y.Z branch and asserts that a corresponding
-# vX.Y.Z-beta.* tag already exists — i.e. the candidate was cut and proven as a
-# beta before this PR merged. If no matching beta tag exists, fail fast (main
-# must only ever promote a sign-off-approved candidate, never mint a fresh
-# version). Then tag vX.Y.Z and cut the stable Release.
+# Owns `main`. On push (the release/X.Y.Z -> main merge) it promotes the
+# hardware-validated candidate to stable: the shared promote action finds the
+# highest vX.Y.Z-rc.N, tags vX.Y.Z on the same commit and cuts the stable
+# Release. It refuses to promote a version that never reached rc.
 #
 # NO build and NO asset: "main never builds" is structural here — this repo has
-# no build artifact, the tag IS the release. Tagging is contents:write; the
-# "Release Tags" ruleset permits compliant v* tags.
+# no build artifact, the tag IS the release.
 #
-# Deriving X.Y.Z: GitHub does not expose the merged head-branch name on a push
-# event, so the version is taken from the merge commit subject, which for a
-# merge of release/X.Y.Z contains "release/X.Y.Z". Under squash/rebase merges
-# that reference is lost, so we fall back to the newest vX.Y.Z-beta.* tag in the
-# commit's ancestry (git tag --merged). A workflow_dispatch `version` input
-# overrides both for manual promotion.
+# After promotion (manual follow-up): delete release/X.Y.Z and open a
+# `main -> development` PR.
 
 on:
   push:
@@ -24,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Stable version to promote eg v0.1.0 (overrides derive)"
+        description: "X.Y.Z to promote (overrides detection from the merge commit)"
         required: false
         default: ""
 
@@ -41,67 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history + tags so the beta-tag assertion and resolve-version.sh
-          # can see all tags.
           fetch-depth: 0
 
-      - name: Derive X.Y.Z and assert a beta candidate exists
-        id: base
-        env:
-          IN_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          base=""
-          if [ -n "${IN_VERSION:-}" ]; then
-            base="${IN_VERSION#v}"
-          else
-            # Prefer the release/X.Y.Z reference carried by the merge commit
-            # subject/body. Under squash/rebase merges that reference is lost,
-            # so fall back to the newest -beta.* tag in this commit's ancestry.
-            base="$(git log -1 --format='%s%n%b' "$GITHUB_SHA" \
-              | grep -oE 'release/[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's#release/##' || true)"
-            if [ -z "$base" ]; then
-              cand="$(git tag --merged "$GITHUB_SHA" -l 'v*-beta.*' --sort=-v:refname \
-                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -1 || true)"
-              cand="${cand#v}"; base="${cand%-beta.*}"
-            fi
-          fi
-          # The || true above is essential: without it pipefail aborts the step
-          # before this validation can surface the actionable error message.
-          echo "$base" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            || { echo "::error::cannot derive X.Y.Z under promotion (squash merge? pass workflow_dispatch version=vX.Y.Z)"; exit 1; }
-
-          # A stable promotion must correspond to a beta candidate that was cut
-          # and (per the release/*->main PR gate) proven against consumers.
-          if [ -z "$(git tag -l "v${base}-beta."'*' --sort=-v:refname | head -1)" ]; then
-            echo "::error::no v${base}-beta.* tag exists — refusing to promote a version that was never a beta candidate"
-            exit 1
-          fi
-          echo "base=${base}" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve stable tag
-        id: ver
-        run: ./scripts/ci/resolve-version.sh stable "${{ steps.base.outputs.base }}"
-
-      - name: Create stable Release (no build, no asset)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.ver.outputs.tag }}"
-          # Idempotent: a re-run after a partial promote must not abort on an
-          # already-created Release/tag.
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$TAG" \
-            --generate-notes
+      - name: Promote the last rc to stable
+        id: promote
+        uses: ScoutSportTechnology/.github/actions/promote@v1.1.0
+        with:
+          to: stable
+          version: ${{ inputs.version }}
 
       - name: Post-promotion reminder (manual maintainer steps)
         run: |
           {
-            echo "## Promoted ${{ steps.ver.outputs.tag }}"
+            echo "## Promoted ${{ steps.promote.outputs.tag }} (from ${{ steps.promote.outputs.source }})"
             echo ""
-            echo "Manual maintainer follow-up (not automated):"
-            echo "- Delete the merged \`release/${{ steps.base.outputs.base }}\` branch."
-            echo "- Merge \`main\` back into \`development\` so the stable tag's history is in the integration branch."
+            echo "- Delete the merged \`release/${{ steps.promote.outputs.base }}\` branch."
+            echo "- Open a \`main -> development\` PR so the stable tag's history is in the integration branch."
           } >> "$GITHUB_STEP_SUMMARY"
