@@ -19,39 +19,39 @@ CI/CD + workflow quick-reference.
 
 ## Branch model
 
-`feat/* → development → release/X.Y.Z → main`. `development` is the default
-branch and the target for `feat/*`/`fix/*`. `main` and `release/*` are PR-only (no direct
-push; green `lint`/`breaking`/`build`; admin/hotfix bypass on `main`).
+`feat/* → development → release/X.Y.Z → main` (Git Flow; levels are tags, not
+branches). `development` is the default branch and the target for
+`feat/*`/`fix/*`. `release/X.Y.Z` is cut from `development` at feature freeze
+and takes fixes only; `main` takes only `release/X.Y.Z` (and `hotfix/*`). One
+release branch open at a time; same branch names across proto, firmware and
+app. `main` and `release/*` are PR-only.
 
 ## Maturity ladder & tags
 
 | Rung | Trigger | Tag | What it means |
 | ---- | ------- | --- | ------------- |
 | alpha | push to `development` | `vX.Y.Z-alpha.N` | `buf lint`+`buf breaking`+`buf build` pass in isolation |
-| beta | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | proven against real consumers (firmware + app) |
-| stable | merge to `main` | `vX.Y.Z` | shipped — no build, no asset |
+| beta | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | feature freeze; proven against real consumers (firmware + app) |
+| rc | `promote-rc` (hardware OK), then pushes to `release/X.Y.Z` | `vX.Y.Z-rc.N` | hardware-validated candidate |
+| stable | merge `release/X.Y.Z` to `main` | `vX.Y.Z` | last rc promoted — no build, no asset |
 
 ## Workflows
 
-Three branch-scoped workflows; there is no standalone `ci.yml` — the PR gate
-checks (`lint`, `breaking`, `build`) are folded into the alpha/beta workflows,
-gated to `pull_request`. Same job names, so rulesets are unchanged.
+The PR gate checks (`lint`, `breaking`, `build`) are folded into the alpha/beta
+workflows, gated to `pull_request`; keep the job names byte-identical (rulesets).
 
-- `release-alpha.yml` (name `release-alpha`) — owns `development`. On
-  `pull_request:[development]` runs `lint`/`breaking`/`build`. On `push:[development]`
-  (+ dispatch) → `resolve-version.sh alpha` → `vX.Y.Z-alpha.N` prerelease, no
-  asset.
-- `release-beta.yml` (name `release-beta`) — owns `release/**`. On
-  `pull_request` into `release/*` runs the same gate. On `push:[release/**]`
-  (+ dispatch) → base from branch name → `vX.Y.Z-beta.N` prerelease, no asset.
-- `release.yml` (name `release`) — owns `main`. On `push:[main]` (+ dispatch) →
-  assert a `vX.Y.Z-beta.*` exists → `vX.Y.Z` stable, no checks, no build, no
-  asset. **Push to `main` does NOT auto-cut a fresh release** — it only
-  promotes a beta-validated candidate. `main` never builds.
+- `release-alpha.yml` — owns `development`: PR gate; on push →
+  `resolve-version` (`mode: alpha`) → `publish-release` → alpha prerelease.
+- `release-beta.yml` — owns `release/**`: PR gate; on push →
+  `resolve-version` (`mode: release`) → beta.N or rc.N prerelease.
+- `promote-rc.yml` — dispatch on `release/X.Y.Z`: newest beta → `rc.1`.
+- `release.yml` — owns `main`: `promote` (`to: stable`) last rc → `vX.Y.Z`.
 
-Version math: `scripts/ci/resolve-version.sh` (modes `alpha|beta|stable`),
-tested by `scripts/ci/resolve-version-test.sh`. All workflows use the default
-`GITHUB_TOKEN`.
+Version math lives in the shared actions of `ScoutSportTechnology/.github`
+(`resolve-version`, `publish-release`, `promote`, pinned `@v1.1.0`): alpha base
+= max(Conventional-Commit bump from the last stable, release floor while a
+`release/X.Y.Z` is open); breaking bumps the minor while major is 0. All
+workflows use the default `GITHUB_TOKEN`.
 
 ## One-time maintainer runbooks (not run by CI)
 

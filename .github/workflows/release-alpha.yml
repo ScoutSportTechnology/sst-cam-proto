@@ -5,8 +5,9 @@ name: release-alpha
 # ruleset's required status checks; on push/dispatch to development it mints an
 # alpha prerelease.
 #
-# alpha tag/release: resolve-version.sh bumps the base from the latest stable tag
-# via Conventional Commits, then appends the next -alpha.N counter. Docs/chore-
+# alpha tag/release: the shared resolve-version action (ScoutSportTechnology/.github)
+# bumps the base from the latest stable tag via Conventional Commits (release
+# floor while a release/X.Y.Z is open), then appends the next -alpha.N counter. Docs/chore-
 # only merges resolve to released=false and mint nothing. This repo is artifact-
 # free: the tag IS the release, so there is NO asset — consumers vendor the
 # submodule and pin a tag's commit. The alpha is the contract validated by the
@@ -108,25 +109,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history + tags so resolve-version.sh sees the latest stable tag
-          # and the existing -alpha.N counters.
+          # Full history, tags and branches: the shared resolver reads the
+          # latest stable tag, the -alpha.N counters and open release/* branches.
           fetch-depth: 0
 
       - name: Resolve next alpha tag
         id: ver
-        env:
-          IN_VERSION: ${{ inputs.version }}
-          IN_BUMP: ${{ inputs.bump }}
-        run: ./scripts/ci/resolve-version.sh alpha
+        uses: ScoutSportTechnology/.github/actions/resolve-version@v1.1.0
+        with:
+          mode: alpha
+          version: ${{ inputs.version }}
+          bump: ${{ inputs.bump }}
 
-      - name: Create alpha prerelease (no asset)
+      - name: Publish alpha prerelease (no asset)
         if: steps.ver.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --prerelease \
-            --target "$GITHUB_SHA" \
-            --title "${{ steps.ver.outputs.tag }}" \
-            --generate-notes
+        uses: ScoutSportTechnology/.github/actions/publish-release@v1.1.0
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          prerelease: "true"
