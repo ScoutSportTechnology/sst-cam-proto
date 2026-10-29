@@ -148,6 +148,8 @@ message Command {
     // App pushes phone wall clock right after the protocol gate so device-local
     // timestamps (file times, summaries, logs) are trustworthy pre-NTP.
     SetDeviceTimeCommand      set_device_time      = 47;
+    ConfirmPreviewReachableCommand confirm_preview_reachable = 48;
+    ConfirmLanPathCommand confirm_lan_path = 49;
 
     FactoryResetCommand   factory_reset    = 50;
     FirmwareUpdateCommand firmware_update  = 51;
@@ -213,6 +215,8 @@ message CommandResponse {
     CameraCalibrationResponse camera_calibration = 28;  // reply to SetCameraCalibrationCommand
     ActiveCameraResponse    active_camera     = 29;  // reply to SetActiveCameraCommand
     SessionSnapshotResponse session_snapshot  = 30;  // reply to GetSessionSnapshotCommand
+    ConfirmPreviewReachableResponse confirm_preview_reachable = 31;
+    ConfirmLanPathResponse confirm_lan_path = 32;
   }
 
   reserved 16, 17, 18, 19, 20, 21, 22;
@@ -884,6 +888,13 @@ message WifiDirectGroupResponse {
 // uplink config (uplink-config.hpp).
 // ===========================================================================
 
+enum LanPath {
+  LAN_PATH_NONE     = 0;
+  LAN_PATH_ETHERNET = 1;
+  LAN_PATH_WIFI_STA = 2;
+  LAN_PATH_P2P      = 3;
+}
+
 message EthernetUplinkConfig {
   bool   enabled = 1;
   bool   dhcp    = 2;
@@ -910,6 +921,7 @@ message NetworkConfig {
 // Set the camera's uplink config — persisted + applied. Reply: NetworkConfigResponse.
 message SetNetworkConfigCommand {
   NetworkConfig config = 1;
+  optional string phone_subnet_cidr = 2;
 }
 
 // Read the camera's current uplink config + live status. Reply: NetworkConfigResponse.
@@ -923,6 +935,39 @@ message NetworkConfigResponse {
   string ethernet_address = 3;  // current CIDR; empty when down
   bool   wifi_up          = 4;
   string wifi_status      = 5;  // "connected" / "unavailable: ..." / "failed: ..."
+
+  uint32 migration_id       = 6;
+  string preview_endpoint   = 7;
+  string preview_credential = 8;
+  bool in_shared_wifi       = 9;
+  string current_ssid       = 10;
+  LanPath lan_path          = 11;
+  optional bool ethernet_dhcp = 12;
+  string ethernet_endpoint   = 13;
+  string ethernet_credential = 14;
+  uint32 ethernet_confirm_id = 15;
+}
+
+message ConfirmPreviewReachableCommand {
+  uint32 migration_id = 1;
+  bool reachable = 2;
+}
+
+message ConfirmPreviewReachableResponse {
+  uint32 migration_id = 1;
+  bool in_shared_wifi = 2;
+}
+
+message ConfirmLanPathCommand {
+  uint32 confirm_id = 1;
+  LanPath path = 2;
+  bool reachable = 3;
+}
+
+message ConfirmLanPathResponse {
+  uint32 confirm_id = 1;
+  LanPath committed_path = 2;
+  bool committed = 3;
 }
 
 // ===========================================================================
