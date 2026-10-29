@@ -78,11 +78,14 @@ jobs:
       - uses: bufbuild/buf-action@v1
         with:
           setup_only: true
-      # buf breaking vs main; a wire break passes only when the PR title
+      # buf breaking vs the PR base; a wire break passes only when the PR title
       # declares it (`type!:` / `type(scope)!:`). See the script header.
       - name: buf breaking (declared breaks allowed)
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          # Compare against the PR base branch: the check judges what THIS PR
+          # changes. Against main, every PR after a declared break would fail.
+          AGAINST: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=${{ github.base_ref }}"
         run: scripts/ci/breaking-gate.sh
 
   build:
