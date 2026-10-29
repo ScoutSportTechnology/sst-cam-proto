@@ -228,7 +228,7 @@ submodule and pin a tag's commit. Branch model:
 **The bump encodes wire compatibility** — this repo is the org's source of
 "breaking". A breaking change (remove/rename/renumber a field) is `feat!:` /
 `BREAKING CHANGE` → **major** (past `1.0.0`); additive → `feat:` → **minor**;
-non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (in CI, vs `main`)
+non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (in CI, vs the PR base branch)
 is the automated classifier: the `breaking` check passes a wire break only when
 the PR title declares it (`type!:` / `type(scope)!:`). A proto major forces a
 major in both consumers.

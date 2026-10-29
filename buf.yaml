@@ -23,7 +23,7 @@ lint:
     # naming (ENUM_NAME_ prefix on every value, _UNSPECIFIED on the zero value)
     # would force renaming every constant — a breaking change across both stacks
     # for zero functional gain. Excepted deliberately; revisit only as part of a
-    # coordinated protocol_version bump (see CLAUDE.md "Changing the schema").
+    # coordinated protocol_version bump (see AGENTS.md "Changing the schema").
     - ENUM_VALUE_PREFIX
     - ENUM_ZERO_VALUE_SUFFIX
 
