@@ -20,6 +20,7 @@ name: release-beta
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches: ["release/**"]
   push:
     branches: ["release/**"]
@@ -61,12 +62,13 @@ jobs:
           fetch-depth: 0
       - uses: bufbuild/buf-action@v1
         with:
-          lint: false
-          format: false
-          push: false
-          breaking: true
-          breaking_against: "https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=main"
-          pr_comment: false
+          setup_only: true
+      # buf breaking vs main; a wire break passes only when the PR title
+      # declares it (`type!:` / `type(scope)!:`). See the script header.
+      - name: buf breaking (declared breaks allowed)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: scripts/ci/breaking-gate.sh
 
   build:
     # Codegen-compile smoke: `buf build` compiles the schema into a

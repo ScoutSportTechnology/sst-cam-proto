@@ -56,7 +56,11 @@ a safe contract change from a dangerous one:
 - **breaking** (remove/rename/renumber a field) → **major** (once past `1.0.0`).
   Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run in
   the alpha/beta gate vs `main`, the last released contract) is the automated classifier;
-  the commit type must match what `buf breaking` reports.
+  the commit type must match what `buf breaking` reports. The `breaking` check
+  (`scripts/ci/breaking-gate.sh`) enforces it: a wire break passes only when the
+  **PR title** declares it (`type!:` / `type(scope)!:`), because the title is
+  what lands on the branch (squash subject or merge-commit body). Editing the
+  title re-runs the check.
 - **additive** (new optional field/message) → **minor** (`feat:`).
 - **non-breaking fix** → **patch** (`fix:` / `perf:`).
 - docs/chore/ci/test/refactor-only → **no release**.
