@@ -23,7 +23,7 @@ We stood up CI/CD across the three SST Cam repos (proto, app, firmware). The ori
 1. The **org disables "Allow GitHub Actions to create and approve pull requests"** org-wide. Changing it needs the `admin:org` scope (our `gh` token lacks it). So `GITHUB_TOKEN` cannot open release-please's release PR — release-please is unusable here.
 2. A **GitHub App** was attempted (manifest-flow via a local server) but the manifest flow failed repeatedly and the App buys nothing at this scale. Abandoned.
 
-This doc captures the resulting proto pipeline + the cross-cutting decisions. (The same CI/CD section lives in each repo's `CLAUDE.md`; this is the first systematic capture in `docs/solutions/`.)
+This doc captures the resulting proto pipeline + the cross-cutting decisions. (The same CI/CD section lives in each repo's `AGENTS.md`; this is the first systematic capture in `docs/solutions/`.)
 
 ## Guidance
 
@@ -70,4 +70,4 @@ Once a `v0.1.0` tag exists, the scan range becomes `v0.1.0..HEAD` (just the new 
 - `docs/solutions/workflow-issues/overnight-autonomous-multi-repo-orchestration-2026-06-09.md` — submodule coordination + devcontainer testing across the 3 repos (the pipeline that gates those flows).
 - `docs/solutions/workflow-issues/folding-git-submodule-onto-feature-branches-2026-06-05.md` — submodule mechanics.
 - Sibling captures: `sst-cam-app` and `sst-cam-firmware` each have a repo-specific version of this doc under `docs/solutions/tooling-decisions/`.
-- `CLAUDE.md` → "CI/CD & releasing" section (per-repo quick reference).
+- `AGENTS.md` → "CI/CD & releasing" section (per-repo quick reference).

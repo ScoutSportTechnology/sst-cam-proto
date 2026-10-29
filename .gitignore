@@ -1,0 +1,10 @@
+# Agent harness folders: per-user, machine-specific state, never committed.
+# Shared agent rules live in AGENTS.md and shared skills in .agents/ (tracked).
+.claude/
+.opencode/
+.codex/
+.cursor/
+.gemini/
+.windsurf/
+.continue/
+.aider*
