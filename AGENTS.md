@@ -59,7 +59,7 @@ a safe contract change from a dangerous one:
 
 - **breaking** (remove/rename/renumber a field) → **major** (once past `1.0.0`).
   Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run in
-  the alpha/beta gate vs `main`, the last released contract) is the automated classifier;
+  the alpha/beta gate vs the PR base branch) is the automated classifier;
   the commit type must match what `buf breaking` reports. The `breaking` check
   (`scripts/ci/breaking-gate.sh`) enforces it: a wire break passes only when the
   **PR title** declares it (`type!:` / `type(scope)!:`), because the title is
@@ -129,7 +129,7 @@ Workflows (the PR gate checks are folded into the alpha/beta workflows, gated to
 
 - `.github/workflows/release-alpha.yml` (name `release-alpha`) — **owns
   `development`**. On `pull_request:[development]` runs the gate: jobs `lint`
-  (`buf lint`), `breaking` (`buf breaking` vs `main`, the last released contract),
+  (`buf lint`), `breaking` (`buf breaking` vs the PR base branch),
   `build` (`buf build` compile-smoke). On `push:[development]` (+ dispatch with
   optional `version`/`bump`) → `resolve-version` (`mode: alpha`) →
   `publish-release` → `vX.Y.Z-alpha.N` **prerelease**, **no asset**.
