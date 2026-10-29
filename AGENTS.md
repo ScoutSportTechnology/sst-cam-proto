@@ -15,7 +15,9 @@ CI/CD + workflow quick-reference.
   "breaking": breaking (remove/rename/renumber a field) → `feat!:`/`BREAKING
   CHANGE` → **major** (past `1.0.0`); additive → `feat:` → **minor**;
   non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (vs `main`) is
-  the automated classifier and the commit type must match it.
+  the automated classifier and the commit type must match it: the `breaking`
+  check (`scripts/ci/breaking-gate.sh`) passes a wire break only when the PR
+  title declares it (`type!:` / `type(scope)!:`).
 
 ## Branch model
 

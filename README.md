@@ -211,7 +211,9 @@ submodule and pin a tag's commit. Branch model:
 "breaking". A breaking change (remove/rename/renumber a field) is `feat!:` /
 `BREAKING CHANGE` → **major** (past `1.0.0`); additive → `feat:` → **minor**;
 non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (in CI, vs `main`)
-is the automated classifier. A proto major forces a major in both consumers.
+is the automated classifier: the `breaking` check passes a wire break only when
+the PR title declares it (`type!:` / `type(scope)!:`). A proto major forces a
+major in both consumers.
 
 Pushing to `main` does **not** auto-cut a fresh release — promotion only
 elevates an already-validated beta candidate to its stable tag.
