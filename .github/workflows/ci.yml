@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches: [development, "release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '*.proto'
+              - 'buf.yaml'
+              - 'justfile'
+              - 'scripts/**'
+              - '.devcontainer/**'
+              - '.github/workflows/**'
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: just lint
+
+  compile:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: just compile
+
+  test:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          env: |
+            BASE=${{ github.base_ref || 'development' }}
+            PR_TITLE=${{ github.event.pull_request.title }}
+            AGAINST=https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=${{ github.base_ref || 'development' }}
+          runCmd: just test

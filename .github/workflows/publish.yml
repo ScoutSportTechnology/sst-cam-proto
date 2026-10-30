@@ -1,0 +1,54 @@
+name: publish
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      prerelease:
+        type: boolean
+        required: true
+      notes:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to re-publish"
+        required: true
+      prerelease:
+        description: "Prerelease"
+        type: boolean
+        default: true
+      notes:
+        description: "Release notes"
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate manual re-publish tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          git fetch origin tag "$TAG"
+          git rev-parse --verify "refs/tags/$TAG^{commit}" >/dev/null
+      - uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: just build
+      - name: Publish release
+        uses: ScoutSportTechnology/.github/actions/publish-release@v1.1.0
+        with:
+          tag: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          notes: ${{ inputs.notes }}
