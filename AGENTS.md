@@ -58,10 +58,10 @@ the release **must classify wire compatibility** — consumers rely on it to tel
 a safe contract change from a dangerous one:
 
 - **breaking** (remove/rename/renumber a field) → **major** (once past `1.0.0`).
-  Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run in
-  the alpha/beta gate vs the PR base branch) is the automated classifier;
-  the commit type must match what `buf breaking` reports. The `breaking` check
-  (`scripts/ci/breaking-gate.sh`) enforces it: a wire break passes only when the
+  Commit must be `feat!:` / carry `BREAKING CHANGE`. `buf breaking` (run by
+  `just test` in the `ci.yml` test job against the PR base branch) is the
+  automated classifier; the commit type must match what `buf breaking` reports.
+  `scripts/ci/breaking-gate.sh` enforces it: a wire break passes only when the
   **PR title** declares it (`type!:` / `type(scope)!:`), because the title is
   what lands on the branch (squash subject or merge-commit body). Editing the
   title re-runs the check.
@@ -98,12 +98,12 @@ there is no build output to publish). Same model in all three sst-cam repos
 Levels:
 
 - **alpha** — construction on `development`; the contract validated by `lint` +
-  `breaking` + `build` *in isolation*.
+  `compile` + `test` *in isolation*.
 - **beta** — feature freeze for X.Y.Z on `release/X.Y.Z`; fixes only. Firmware +
   app vendor the beta and prove it in integration.
 - **rc** — after the hardware test (flash a real Jetson, test end to end with the
-  app). `promote-rc.yml` re-tags the newest beta as `vX.Y.Z-rc.1` on the **same
-  commit**; later merges to `release/X.Y.Z` mint `rc.N`.
+  app). Dispatch `release.yml` with `to: rc` on `release/X.Y.Z` to re-tag the
+  newest beta as `vX.Y.Z-rc.1` on the **same commit**; later merges mint `rc.N`.
 - **stable** — merging `release/X.Y.Z → main` promotes the last rc to `vX.Y.Z`
   (same commit). Then delete `release/X.Y.Z` and PR `main → development`.
 - **hotfix** — `hotfix/X.Y.Z+1` from `main` → PR to `main` → `vX.Y.(Z+1)` →
@@ -118,36 +118,33 @@ Version math lives in the shared actions of
   `X.Y.Z` is open (beta/rc tags, no stable, `release/X.Y.Z` branch exists),
   `development` builds `X.(Y+1).0`.
 - **Pre-1.0:** a breaking change bumps the minor while the major is 0; `1.0.0`
-  is cut on purpose (dispatch `bump: major`).
+  is cut on purpose (dispatch `release.yml` on `development` with `bump: major`).
 - **Breaking** = `type!:`, `type(scope)!:` or a `BREAKING CHANGE:` footer. Write
   `feat(scope)!:`, not `feat!(scope):`.
 - **Mint gate:** an alpha is minted only if a `feat`/`fix`/`perf`/breaking commit
   landed since the last tag on `development`; docs/chore-only merges mint nothing.
 
-Workflows (the PR gate checks are folded into the alpha/beta workflows, gated to
-`pull_request`):
+Workflows:
 
-- `.github/workflows/release-alpha.yml` (name `release-alpha`) — **owns
-  `development`**. On `pull_request:[development]` runs the gate: jobs `lint`
-  (`buf lint`), `breaking` (`buf breaking` vs the PR base branch),
-  `build` (`buf build` compile-smoke). On `push:[development]` (+ dispatch with
-  optional `version`/`bump`) → `resolve-version` (`mode: alpha`) →
-  `publish-release` → `vX.Y.Z-alpha.N` **prerelease**, **no asset**.
-- `.github/workflows/release-beta.yml` (name `release-beta`) — **owns
-  `release/**`**. Same gate on PRs. On `push:[release/**]` (+ dispatch) →
-  `resolve-version` (`mode: release`, X.Y.Z from the branch name) →
-  `vX.Y.Z-beta.N`, or `rc.N` once the rc phase started — **no asset**.
-- `.github/workflows/promote-rc.yml` (name `promote-rc`) — `workflow_dispatch`
-  on `release/X.Y.Z` after the hardware sign-off: newest beta → `rc.1`.
-- `.github/workflows/release.yml` (name `release`) — **owns `main`**. On
-  `push:[main]` (+ dispatch) → `promote` (`to: stable`): highest `vX.Y.Z-rc.N` →
-  `vX.Y.Z`; fails if there is no rc. No checks, no build, no asset.
+- `.github/workflows/ci.yml` (name `ci`) — PRs into `development` or
+  `release/**` and manual dispatch run `just lint`, `just compile`, `just test`
+  in jobs named `lint`, `compile`, `test`. The test job runs the breaking gate
+  against the PR base; docs-only PRs skip compile/test. Run `just ci` locally
+  before opening a PR.
+- `.github/workflows/release.yml` (name `release`) — pushes to `development`
+  or `release/**` resolve the alpha or beta/rc tag and call `publish.yml` for
+  a prerelease. Dispatch on `development` may override `version`/`bump`;
+  dispatch on `release/X.Y.Z` with `to: rc` promotes the latest beta after
+  hardware sign-off. On `main` it promotes the last rc to stable, failing if
+  there is no rc. Neither promotion rebuilds the contract.
+- `.github/workflows/publish.yml` (name `publish`) — called by `release.yml`
+  for prereleases; `just build` writes the descriptor to `dist/`, then the
+  shared publish action tags and publishes the release with no uploaded asset.
+  Manual dispatch re-publishes only an existing tag.
 
-The gate job names (`lint`/`breaking`/`build`) are the required status checks of
-the branch rulesets — keep them byte-identical. All workflows use the default
-`GITHUB_TOKEN` (tagging is `contents: write`; the "Release Tags" ruleset permits
-compliant `v*` tags and forbids moving/deleting them). The org blocks
-Actions-created PRs, so `pr_comment: false` and no release-please.
+The required PR check contexts are `lint`/`compile`/`test`. Workflows use the
+default `GITHUB_TOKEN` (`contents: write` for tags/releases); the "Release Tags"
+ruleset permits compliant `v*` tags and forbids moving/deleting them.
 
 Two **one-time maintainer runbooks** (not run by CI): `docs/ci/rulesets.md`
 (branch + tag rulesets) and `docs/ci/version-reset-runbook.md` (history of the
@@ -174,7 +171,7 @@ bump-encodes-wire-compatibility rule above).
 
 - `development` is the default branch and the target for `feat/*`/`fix/*`.
   `main` and `release/*` are PR-only (no direct push); `main` needs 1 approval
-  (admin bypass) and green checks.
+  (admin bypass).
 - One `release/X.Y.Z` open at a time; cut it from `development` at feature
   freeze. A merge to `development` means "ships in the next cut" — unfinished
   work stays in `feat/*`.
@@ -190,16 +187,17 @@ bump-encodes-wire-compatibility rule above).
 ```
 development:   alpha.1 → alpha.2 → alpha.3
                                      │ cut release/0.1.0 (feature freeze)
-release/0.1.0:                       └► beta.1 → beta.2 ─► promote-rc ─► rc.1 → rc.2
+release/0.1.0:                       └► beta.1 → beta.2 ─► release.yml to: rc ─► rc.1 → rc.2
                                                          (hardware OK)          │ merge → main
 main:                                                                           └► v0.1.0
 ```
 
 1. Land `feat:`/`fix:` PRs into `development` → `vX.Y.Z-alpha.N`.
-2. Feature freeze: `git switch -c release/X.Y.Z development && git push` (same
-   X.Y.Z in all three repos) → `vX.Y.Z-beta.1`; fixes by PR → `beta.N`.
-3. Hardware test passes → run `promote-rc` on `release/X.Y.Z` in each repo →
-   `rc.1`; further fixes → `rc.N`.
+2. Feature freeze: cut `release/X.Y.Z` from `development` (same X.Y.Z in all
+   three repos, using the branch API rather than a blocked direct push) →
+   `vX.Y.Z-beta.1`; fixes by PR → `beta.N`.
+3. Hardware test passes → dispatch `release.yml` with `to: rc` on
+   `release/X.Y.Z` in each repo → `rc.1`; further fixes → `rc.N`.
 4. PR `release/X.Y.Z → main`, merge → `release.yml` tags `vX.Y.Z` from the last
    rc. Delete `release/X.Y.Z`, PR `main → development`.
 

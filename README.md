@@ -221,20 +221,21 @@ submodule and pin a tag's commit. Branch model:
 
 | Rung | Where | Tag | Meaning |
 | ---- | ----- | --- | ------- |
-| **alpha** | push to `development` | `vX.Y.Z-alpha.N` | contract validated by `buf lint` + `buf breaking` + `buf build` in isolation |
+| **alpha** | push to `development` | `vX.Y.Z-alpha.N` | contract validated by `ci.yml` jobs `lint` + `compile` + `test` in isolation |
 | **beta** | push to `release/X.Y.Z` | `vX.Y.Z-beta.N` | candidate proven against the real consumers (firmware + app) in integration |
-| **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `release.yml` only tags a beta-validated commit) |
+| **rc** | dispatch `release.yml` with `to: rc` after hardware sign-off | `vX.Y.Z-rc.N` | first rc re-tags the newest beta on the same commit; later fixes mint rc.N |
+| **stable** | merge to `main` | `vX.Y.Z` | shipped (no build, no asset — `release.yml` promotes the last rc) |
 
 **The bump encodes wire compatibility** — this repo is the org's source of
 "breaking". A breaking change (remove/rename/renumber a field) is `feat!:` /
 `BREAKING CHANGE` → **major** (past `1.0.0`); additive → `feat:` → **minor**;
 non-breaking fix → `fix:`/`perf:` → **patch**. `buf breaking` (in CI, vs the PR base branch)
-is the automated classifier: the `breaking` check passes a wire break only when
+is the automated classifier: the `test` check passes a wire break only when
 the PR title declares it (`type!:` / `type(scope)!:`). A proto major forces a
 major in both consumers.
 
 Pushing to `main` does **not** auto-cut a fresh release — promotion only
-elevates an already-validated beta candidate to its stable tag.
+elevates the hardware-validated rc candidate to its stable tag.
 
 ### How consumers pin a version (submodule)
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # =============================================================================
-# breaking-gate.sh — the `breaking` PR check (release-alpha / release-beta).
 #
 # Runs `buf breaking` against the PR base branch (AGAINST), so it judges only
 # what the PR itself changes. A wire break is allowed only when the PR title declares it the Conventional-Commit way

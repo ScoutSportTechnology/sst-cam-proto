@@ -1,16 +1,5 @@
 name: release
 
-# Owns `main`. On push (the release/X.Y.Z -> main merge) it promotes the
-# hardware-validated candidate to stable: the shared promote action finds the
-# highest vX.Y.Z-rc.N, tags vX.Y.Z on the same commit and cuts the stable
-# Release. It refuses to promote a version that never reached rc.
-#
-# NO build and NO asset: "main never builds" is structural here — this repo has
-# no build artifact, the tag IS the release.
-#
-# After promotion (manual follow-up): delete release/X.Y.Z and open a
-# `main -> development` PR.
-
 on:
   push:
     branches: [development, "release/**", main]
@@ -72,7 +61,6 @@ jobs:
         with:
           fetch-depth: 0
       - id: ver
-        if: ${{ (github.ref_name == 'development' && hashFiles('.github/workflows/release-alpha.yml') == '') || (github.ref_name != 'development' && hashFiles('.github/workflows/release-beta.yml') == '') }}
         uses: ScoutSportTechnology/.github/actions/resolve-version@v1.1.0
         with:
           mode: ${{ github.ref_name == 'development' && 'alpha' || 'release' }}
@@ -100,7 +88,6 @@ jobs:
           fetch-depth: 0
       - name: Promote existing release
         id: promoted
-        if: ${{ github.ref_name == 'main' || hashFiles('.github/workflows/promote-rc.yml') == '' }}
         uses: ScoutSportTechnology/.github/actions/promote@v1.1.0
         with:
           to: ${{ github.ref_name == 'main' && 'stable' || 'rc' }}

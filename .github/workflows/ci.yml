@@ -3,7 +3,7 @@ name: ci
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
-    branches: [development, "release/**"]
+    branches: [development, "release/**", main]
   workflow_dispatch:
 
 permissions:
