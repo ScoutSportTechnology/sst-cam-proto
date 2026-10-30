@@ -13,7 +13,7 @@ is not a deliberately released contract. As the org's source of "breaking", the
 proto version line must be clean before consumers pin against it. The target
 ladder is:
 
-- `0.1.0-alpha.N` — the contract iterating on `development` (lint+breaking+build in
+- `0.1.0-alpha.N` — the contract iterating on `development` (lint+compile+test in
   isolation).
 - `0.1.0-beta.1` — the first release candidate, consumed by the **joint
   firmware + app beta** for cross-stack integration sign-off.
@@ -64,21 +64,22 @@ The "Release Tags" ruleset blocks tag deletion by design, so the bypass is
 
 ## Seed the alpha line
 
-With no stable tags present, `resolve-version.sh alpha` bumps from an implicit
-`v0.0.0`, so the first `feat:` merge to `development` mints `v0.1.0-alpha.1`
-automatically via `alpha.yml`. Two ways to seed:
+With no stable tags present, the shared `resolve-version@v1.1.0` action bumps
+from an implicit `v0.0.0`, so the first `feat:` merge to `development` mints
+`v0.1.0-alpha.1` via `release.yml` → `publish.yml`. Two ways to seed:
 
 - **Let it happen:** merge the first releasable (`feat:`) PR into `development`;
-  `alpha.yml` mints `v0.1.0-alpha.1`.
-- **Deterministic seed (manual dispatch):** run `alpha.yml` with the
-  `version=v0.1.0` input (forwarded as `IN_VERSION`), which seeds
-  `v0.1.0-alpha.1` regardless of the commit scan. Use this if the first merge is
-  docs/chore-only or to mint a clean baseline immediately.
+  `release.yml` mints `v0.1.0-alpha.1`.
+- **Deterministic seed (manual dispatch):** run `release.yml` on `development`
+  with `version=v0.1.0`, which seeds `v0.1.0-alpha.1` regardless of the commit
+  scan. Use this if the first merge is docs/chore-only or to mint a clean
+  baseline immediately.
 
 ## After reset
 
 - First development alpha is `v0.1.0-alpha.1`.
-- Cut `release/0.1.0` when the alpha contract is ready → `release-beta.yml` mints
-  `v0.1.0-beta.1` (the joint firmware+app beta vendors this commit).
-- Promote `release/0.1.0 → main` only after consumer sign-off → `promote.yml`
-  mints stable. The first stable is intended to be `1.0.0`.
+- Cut `release/0.1.0` when the alpha contract is ready → `release.yml` mints
+  `v0.1.0-beta.1` via `publish.yml` (the joint firmware+app beta vendors this commit).
+- After hardware sign-off, dispatch `release.yml` with `to: rc` on the release
+  branch; merge into `main` only after approval → `release.yml` promotes that rc
+  to `v0.1.0` stable on the same commit.

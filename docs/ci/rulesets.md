@@ -2,8 +2,10 @@
 
 > **STATUS: APPLIED (as of 2026-06-18).** The rulesets below are live —
 > {Release Tags, development, main, release-branches} with OrgAdmin bypass.
-> `development` requires `lint`/`breaking`/`build`; `main`'s required checks are
-> deferred. The runbook commands are kept below for reference / re-application.
+> The required PR check contexts on `development` and `release/*` were switched
+> to `lint`/`compile`/`test`. `main` still requires legacy `lint`/`breaking`/`build`;
+> its ruleset must switch to `lint`/`compile`/`test` before a stable PR can merge.
+> The runbook commands are kept below for reference / re-application.
 >
 > **One-time MAINTAINER runbook.** These `gh api` calls apply the GitHub
 > rulesets that enforce the branch model. They are **not** run by CI and **not**
@@ -15,31 +17,16 @@
 
 | Branch | Rule |
 | ------ | ---- |
-| `development` (default) | PR required; green `lint` + `breaking` + `build`; no direct push / force-push / deletion. |
-| `main` | PR required; green `lint` + `breaking` + `build` (these run on the `release/*→main` PR via the `pull_request`-gated checks in `release-alpha.yml`/`release-beta.yml` — directly realizing the required checks, AE4); no direct push / force-push / deletion; admin/hotfix bypass. |
-| `release/*` | PR required into it; green `lint` + `breaking` + `build`; no force-push / deletion. |
-| tags `v*` (Release Tags) | **Immutable**: creation of compliant SemVer tags allowed; update / delete / force-push blocked. Must permit `vX.Y.Z`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`. |
+| `development` (default) | PR required; green `lint` + `compile` + `test`; no direct push / force-push / deletion. |
+| `main` | PR required, 1 approval (admin/hotfix bypass); current legacy required checks need a ruleset migration before a stable PR. `release.yml` promotes an existing rc on push, without building. No direct push / force-push / deletion. |
+| `release/*` | PR required into it; green `lint` + `compile` + `test`; no force-push / deletion. |
+| tags `v*` (Release Tags) | **Immutable**: creation of compliant SemVer tags allowed; update / delete / force-push blocked. Must permit `vX.Y.Z`, `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, `vX.Y.Z-rc.N`. |
 
-`lint`, `breaking`, and `build` are the three `pull_request` gate job names
-(folded into `release-alpha.yml`/`release-beta.yml`). They are the
-required status-check **contexts**. Capture them from a real run (a throwaway PR
-into `development`) before wiring — GitHub matches on the exact context string.
-
-> **⚠ OPEN CAVEAT — DO NOT RESOLVE HERE, FLAG ONLY.**
-> The `alpha` / `release-beta` / `promote` workflows run on **push** events, not
-> on the PR. Required status checks on a branch ruleset gate the **PR** and are
-> satisfied by check-runs reported against the PR head SHA. It must be verified
-> that GitHub surfaces a `push`-event check-run as a **PR status on the same
-> SHA** — if it does **not**, the `release/*→main` PR cannot be gated on a
-> push-triggered job, and a lightweight **no-build assertion gate** (a tiny
-> `pull_request`-triggered job that re-asserts the beta tag / contract invariant)
-> must be added so `main`'s required check is realizable. For proto specifically
-> this is mitigated because the gate (`lint`/`breaking`/`build`, folded into
-> `release-alpha.yml`/`release-beta.yml`) **is** `pull_request`-triggered and
-> runs on the `release/*→main` PR — so the three required checks are realizable
-> via the PR directly. The caveat remains for any ruleset that would try to
-> require a push-only job (e.g. the `push:[main]` promote in `release.yml`) as a
-> PR status. Verify before relying on it; do not assume.
+`lint`, `compile`, and `test` are the three `ci.yml` PR job names and the
+required status-check **contexts** on `development` and `release/*`.
+`ci.yml` also runs on PRs into `main`, which still requires the removed legacy
+checks until an administrator migrates its ruleset. Do not require the push-only
+`release.yml` promote job as a PR status.
 
 ## Commands
 
@@ -72,8 +59,8 @@ cat > /tmp/ruleset-development.json <<'JSON'
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "lint" },
-          { "context": "breaking" },
-          { "context": "build" }
+          { "context": "compile" },
+          { "context": "test" }
         ]
       } }
   ]
@@ -104,15 +91,6 @@ cat > /tmp/ruleset-main.json <<'JSON'
         "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false
-      } },
-    { "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": false,
-        "required_status_checks": [
-          { "context": "lint" },
-          { "context": "breaking" },
-          { "context": "build" }
-        ]
       } }
   ]
 }
@@ -149,8 +127,8 @@ cat > /tmp/ruleset-release.json <<'JSON'
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "lint" },
-          { "context": "breaking" },
-          { "context": "build" }
+          { "context": "compile" },
+          { "context": "test" }
         ]
       } }
   ]
@@ -161,10 +139,10 @@ gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-release.js
 
 ### Release Tags ruleset (immutable v*)
 
-Permit creation of compliant SemVer tags (stable + `-alpha.N`/`-beta.N`
-prereleases); block update / delete / force-push so a published tag is
-immutable. The `alpha` / `release-beta` / `promote` workflows create tags via
-the default `GITHUB_TOKEN`, so creation must stay allowed.
+Permit creation of compliant SemVer tags (stable + `-alpha.N`/`-beta.N`/
+`-rc.N` prereleases); block update / delete / force-push so a published tag is
+immutable. `release.yml` and its called `publish.yml` create tags via the
+default `GITHUB_TOKEN`, so creation must stay allowed.
 
 ```bash
 cat > /tmp/ruleset-tags.json <<'JSON'
@@ -192,7 +170,6 @@ gh api --method POST repos/:owner/:repo/rulesets --input /tmp/ruleset-tags.json
 ## Ordering
 
 1. Bootstrap `development` + flip default branch (U0).
-2. Let the `pull_request` gate (in `release-alpha.yml`) run once on a throwaway
-   PR into `development`; capture the exact `lint` / `breaking` / `build` context
-   names.
+2. Let `ci.yml` run once on a PR into `development`; capture the exact
+   `lint` / `compile` / `test` context names.
 3. Apply the rulesets above (this doc) last.

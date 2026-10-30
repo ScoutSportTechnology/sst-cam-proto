@@ -33,9 +33,6 @@ ci:
 clean:
     @just _run 'rm -rf dist'
 
-breaking:
-    @just _run 'buf breaking --against "${AGAINST:-.git#branch=${BASE:-origin/development}}"'
-
 _run cmd:
     @if [ -f /.dockerenv ] && [ -d /workspaces/sst-cam-proto ]; then \
         bash -uc {{ quote(cmd) }}; \
@@ -55,4 +52,4 @@ _container cmd:
         if [ "${!_name+x}" ]; then _env+=(--remote-env "$_name=${!_name}"); fi; \
     done; \
     "$_DC" up --workspace-folder "{{ justfile_directory() }}" "${_mount[@]}" >/dev/null && \
-    "$_DC" exec --workspace-folder "{{ justfile_directory() }}" "${_env[@]}" bash -uc {{ quote(cmd) }}
+    "$_DC" exec --workspace-folder "{{ justfile_directory() }}" "${_env[@]}" bash -uc 'cd "/workspaces/$(basename "$1")" && bash -uc "$2"' bash "{{ justfile_directory() }}" {{ quote(cmd) }}
