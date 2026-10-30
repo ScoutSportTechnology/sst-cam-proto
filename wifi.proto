@@ -20,16 +20,16 @@ package sst_cam;
 // Descriptor for the live preview stream. Returned alongside
 // WifiDirectGroupResponse or updated mid-session (e.g., bitrate drop).
 message PreviewStreamDescriptor {
-  string       url          = 1;
-  PreviewCodec codec        = 2;
-  uint32       width        = 3;
-  uint32       height       = 4;
-  uint32       fps          = 5;
-  uint32       bitrate_kbps = 6;
+  string url = 1;
+  PreviewCodec codec = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint32 fps = 5;
+  uint32 bitrate_kbps = 6;
 }
 
 enum PreviewCodec {
-  PREVIEW_CODEC_UNKNOWN   = 0;
+  PREVIEW_CODEC_UNKNOWN = 0;
   PREVIEW_CODEC_RTSP_H264 = 1;
 
   reserved 2;
@@ -40,7 +40,7 @@ enum PreviewCodec {
 // surfaces can detect "frames flowing" without subscribing to the RTSP byte
 // stream. Carries no pixel data.
 message PreviewFrame {
-  uint64 sequence        = 1;
+  uint64 sequence = 1;
   uint64 capture_unix_ms = 2;
 
   reserved 3;

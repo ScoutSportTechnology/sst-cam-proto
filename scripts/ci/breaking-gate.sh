@@ -14,14 +14,15 @@
 #   buf itself errors            -> fail
 #
 # env:
-#   PR_TITLE  pull request title (required)
+#   PR_TITLE  pull request title (defaults to the current branch commit subject)
 #   AGAINST   buf input to compare against (CI passes the PR base branch;
 #             default for local runs: this repo's development)
 # =============================================================================
 set -euo pipefail
 
-against="${AGAINST:-https://github.com/ScoutSportTechnology/sst-cam-proto.git#branch=development}"
-title="${PR_TITLE:?PR_TITLE is required}"
+against="${AGAINST:-.git#branch=${BASE:-origin/development}}"
+title="${PR_TITLE:-$(git log -1 --format=%s)}"
+: "${title:?PR_TITLE or a git commit subject is required}"
 
 declared=false
 if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$title"; then

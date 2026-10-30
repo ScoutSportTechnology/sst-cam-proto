@@ -1,50 +1,58 @@
-# SST Cam proto — task runner.
-#
-# Recipes run natively when you're INSIDE the dev container, and transparently
-# delegate to the container via the `devcontainer` CLI when run from the HOST.
-#
-# This repo ships only the .proto contract: buf lints it and checks for breaking
-# changes. Consumers (app, firmware) vendor it as a git submodule and generate
-# their own bindings — there is no codegen here.
-#
-# Requirements:
-#   - Host:         `just` + the `devcontainer` CLI on PATH (or at ~/.devcontainers/bin).
-#   - In-container: buf (baked into the image).
-# Start the container once from the host with `just up` before delegating.
-
 set shell := ["bash", "-uc"]
 
-# List recipes.
 default:
     @just --list
 
-# --- container lifecycle (host-side) --------------------------------------
-
-# Start the dev container (no-op if already running).
 up:
-    @_DC="$(command -v devcontainer || echo "$HOME/.devcontainers/bin/devcontainer")"; "$_DC" up --workspace-folder "{{justfile_directory()}}"
+    @just _run 'true'
 
-# Open an interactive shell in the dev container.
 shell:
-    @_DC="$(command -v devcontainer || echo "$HOME/.devcontainers/bin/devcontainer")"; "$_DC" exec --workspace-folder "{{justfile_directory()}}" bash
+    @just _run 'exec bash'
 
-# --- buf recipes (auto native-or-delegated) -------------------------------
-
-# Lint the protos (DEFAULT rules, see buf.yaml).
 lint:
-    @just _run "buf lint"
+    @just _run 'buf format -d --exit-code && buf lint'
 
-# Check for breaking changes against main.
+fmt:
+    @just _run 'buf format -w'
+
+compile:
+    @just _run 'buf build'
+
+test:
+    @just _run 'scripts/ci/breaking-gate.sh'
+
+test-device:
+    @true
+
+build:
+    @just _run 'mkdir -p dist && buf build -o dist/sst-cam-proto.binpb'
+
+ci:
+    @just lint & lint_pid=$!; just compile && just test; result=$?; wait "$lint_pid" || exit $?; exit "$result"
+
+clean:
+    @just _run 'rm -rf dist'
+
 breaking:
-    @just _run "buf breaking --against '.git#branch=main'"
+    @just _run 'buf breaking --against "${AGAINST:-.git#branch=${BASE:-origin/development}}"'
 
-# --- internal -------------------------------------------------------------
-
-# Run a command natively in-container, or delegate from the host.
 _run cmd:
-    @if [ -f /.dockerenv ] || [ -n "${REMOTE_CONTAINERS:-}${CODESPACES:-}" ]; then \
-        bash -uc "{{cmd}}"; \
+    @if [ -f /.dockerenv ] && [ -d /workspaces/sst-cam-proto ]; then \
+        bash -uc {{ quote(cmd) }}; \
     else \
-        _DC="$(command -v devcontainer || echo "$HOME/.devcontainers/bin/devcontainer")"; \
-        "$_DC" exec --workspace-folder "{{justfile_directory()}}" bash -uc "{{cmd}}"; \
+        just _container {{ quote(cmd) }}; \
     fi
+
+_container cmd:
+    @_DC="$(command -v devcontainer || echo "$HOME/.devcontainers/bin/devcontainer")"; \
+    _git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"; \
+    _mount=(); \
+    if [ "$_git_dir" != "{{ justfile_directory() }}/.git" ]; then \
+        _mount=(--mount "type=bind,source=$_git_dir,target=$_git_dir"); \
+    fi; \
+    _env=(); \
+    for _name in BASE AGAINST PR_TITLE; do \
+        if [ "${!_name+x}" ]; then _env+=(--remote-env "$_name=${!_name}"); fi; \
+    done; \
+    "$_DC" up --workspace-folder "{{ justfile_directory() }}" "${_mount[@]}" >/dev/null && \
+    "$_DC" exec --workspace-folder "{{ justfile_directory() }}" "${_env[@]}" bash -uc {{ quote(cmd) }}
