@@ -71,7 +71,11 @@ package sst_cam;
 //       camera_index/capture_group_id (8-10), RecordingControlCommand.
 //       capture_group_id (3); all numbers+names reserved. Proxy footage is
 //       retrieved on-device by match id. Overlay exports (L2) persist in the
-//       match folder beside L1 (no exports dir, no post-download delete).
+//       match folder beside L1 (no exports dir, no post-download deletion).
+//   2026-11-11: Add finalizing flags, clean-shutdown end reason, and device
+//   component preflight health; clarify both-camera start gate, WiFi Direct idle
+//   reconnect, internal proxy capture, and persistent L2 exports. Additive only;
+//   DeviceInfoResponse.protocol_version is not bumped.
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -229,8 +233,8 @@ enum ResponseStatus {
   // streaming). The on-demand overlay burn would contend with the live x264
   // encode on the no-NVENC Orin Nano — retry once the session ends. #6.
   LIVE_SESSION_ACTIVE = 4;
-  // Start-class command (recording/streaming/raw-capture START) refused because
-  // a camera is not healthy (CameraHealth != CAMERA_HEALTH_OK). Stop/finalize,
+  // Start-class command (recording/streaming START) refused unless BOTH cameras
+  // are CAMERA_HEALTH_OK; CAMERA_HEALTH_RECOVERING also blocks. Stop/finalize,
   // downloads, diagnostics reads, StartWifiDirect, and reboot are NEVER gated —
   // the operator must always be able to end a session and retrieve footage.
   DEVICE_INOPERABLE = 5;
@@ -296,8 +300,9 @@ message ExportJobResponse {
   string job_id = 1;
   ExportJobState state = 2;
   // Set only when state == EXPORT_JOB_READY: a one-shot download token for the
-  // burned L2, identical transport to a normal recording download. The firmware
-  // deletes the L2 once the download completes or the token expires.
+  // burned L2, identical transport to a normal recording download. Overlay exports
+  // (L2) persist in the match folder beside L1 (no exports dir, no post-download
+  // deletion).
   optional DownloadTokenResponse token = 3;
 }
 
@@ -377,24 +382,50 @@ message DeviceTelemetry {
   reserved "is_raw_capturing";
 
   // Per-camera frame-truth health (state-health cycle). Index matches the
-  // physical nvarguscamerasrc sensor-id (same referent as
-  // RecordingMetadata.camera_index). Absent ⇒ firmware predates health
-  // reporting — consumers render "unreported", never fabricate OK.
+  // physical nvarguscamerasrc sensor-id (0/1). Internal proxy capture status
+  // is invisible to the app. Absent ⇒ firmware predates health reporting —
+  // consumers render "unreported", never fabricate OK.
   optional CameraHealth camera0_health = 15;
   optional CameraHealth camera1_health = 16;
+
+  // True from the stop request until the MP4 is finalized (moov written,
+  // summary saved). is_recording becomes false when finalizing starts; the
+  // two are never both true.
+  optional bool is_finalizing = 17;
+
+  // Startup preflight result; cameras are reported separately above.
+  optional DeviceComponents components = 18;
 }
 
 // Frame-truth per-camera health. OK requires frames actually flowing — a
-// pipeline in PLAYING that delivers no samples is NOT ok. RECOVERING = stalled,
-// watchdog restart pending/in progress (transient ~50s Argus stalls live here;
-// UIs show a soft indicator, NOT "inoperable"). DOWN = restart attempts for
-// this camera completed and failed — the device is inoperable for capture
-// (start-class commands are refused with DEVICE_INOPERABLE).
+// pipeline in PLAYING that delivers no samples is NOT ok. BOTH cameras must be
+// CAMERA_HEALTH_OK for a start-class command; RECOVERING also blocks the start
+// with DEVICE_INOPERABLE. RECOVERING = stalled, watchdog restart pending/in
+// progress (transient ~50s Argus stalls live here; UIs show a soft indicator).
+// DOWN = restart attempts for this camera completed and failed — the device
+// is inoperable for capture (start-class commands are refused).
 enum CameraHealth {
   CAMERA_HEALTH_UNKNOWN = 0;
   CAMERA_HEALTH_OK = 1;
   CAMERA_HEALTH_RECOVERING = 2;
   CAMERA_HEALTH_DOWN = 3;
+}
+
+// Startup preflight status for device components other than the cameras.
+enum ComponentStatus {
+  COMPONENT_STATUS_UNKNOWN = 0;
+  COMPONENT_STATUS_OK = 1;
+  COMPONENT_STATUS_DEGRADED = 2;
+  COMPONENT_STATUS_MISSING = 3;
+}
+
+message DeviceComponents {
+  optional ComponentStatus gpu = 1;
+  optional ComponentStatus wifi = 2; // WiFi card (P2P + STA)
+  optional ComponentStatus ethernet = 3;
+  optional ComponentStatus bluetooth = 4;
+  optional ComponentStatus storage = 5;
+  optional bool clock_synced = 6;
 }
 
 enum WifiState {
@@ -520,7 +551,7 @@ message RecordingControlCommand {
   RecordingAction action = 1;
   // Optional record quality/fps, independent of the stream quality. Applied at
   // session start by (re)configuring the encode pipeline; unset => firmware
-  // default. Does NOT affect the fixed-resolution raw dual-recording. The app
+  // default. Does NOT affect internal dual-camera proxy capture. The app
   // offers only DeviceInfoResponse.supported_modes.
   optional VideoQuality quality = 2;
   // Retired (state-health cycle): the app-minted proxy pairing key. The
@@ -730,11 +761,12 @@ message PushSessionConfigCommand {
 // 9b. Session snapshot / reconnect handshake (state-health cycle)
 //
 // A session OUTLIVES the BLE connection: the firmware keeps recording /
-// streaming / raw-capturing through app disconnects (bounded by
-// auto_stop_minutes) and keeps the WiFi-Direct group up while the session is
-// active — a redundant StartWifiDirectCommand while the group is up returns
-// the EXISTING group's credentials without re-forming it (group re-formation
-// disrupts CSI/Argus capture on the shared-radio Jetson).
+// streaming through app disconnects (bounded by auto_stop_minutes); internal
+// proxy capture rides that lifecycle and is invisible to the app. The group
+// stays up while a session is active and closes after the idle timeout; the
+// app calls idempotent StartWifiDirectCommand when preview/download needs it.
+// When already up, this returns the EXISTING credentials without re-forming
+// the group (re-formation disrupts CSI/Argus capture on the shared-radio Jetson).
 //
 // Every connect runs the same handshake regardless of history (first connect,
 // manual reconnect, app relaunch, camera reboot):
@@ -771,6 +803,7 @@ enum SessionEndReason {
   SESSION_END_CAMERA_FAILURE = 3; // camera went DOWN mid-recording; finalized cleanly
   SESSION_END_REBOOT = 4; // boot-time scan found an orphaned recording
   // (crash/power loss; file_valid likely false)
+  SESSION_END_SHUTDOWN = 5; // clean service stop (systemd stop / poweroff) finalized the recording
 }
 
 // How the previous session ended — populated in SessionSnapshotResponse ONLY
@@ -824,6 +857,14 @@ message SessionSnapshotResponse {
   // WiFi-Direct group currently up (rejoin path: StartWifiDirectCommand is
   // idempotent and returns the existing credentials).
   optional bool wifi_group_up = 12;
+
+  // True from the stop request until the MP4 is finalized (moov written,
+  // summary saved). is_recording becomes false when finalizing starts; the
+  // two are never both true.
+  optional bool is_finalizing = 13;
+
+  // Startup preflight result; cameras are reported separately above.
+  optional DeviceComponents components = 14;
 }
 
 // Absolute match-state overwrite — the reconciliation verb. Every field
@@ -860,8 +901,14 @@ message SetDeviceTimeCommand {
 // without touching wpa_supplicant. Group re-formation disrupts CSI/Argus
 // capture on the shared-radio Jetson and MUST NOT happen mid-session.
 // StartWifiDirect is never gated by DEVICE_INOPERABLE (downloads need the group).
+// The group closes after the idle timeout; the app must reconnect transparently
+// (it calls StartWifiDirectCommand again, which is idempotent) when preview or
+// download needs the link.
 message StartWifiDirectCommand {}
 
+// Stops the group explicitly. The group also closes after the idle timeout;
+// the app must reconnect transparently via idempotent StartWifiDirectCommand
+// when preview or download needs the link.
 message StopWifiDirectCommand {}
 
 message WifiDirectGroupResponse {
