@@ -76,6 +76,8 @@ package sst_cam;
 //   component preflight health; clarify both-camera start gate, WiFi Direct idle
 //   reconnect, internal proxy capture, and persistent L2 exports. Additive only;
 //   DeviceInfoResponse.protocol_version is not bumped.
+//   2026-11-11: RECORDING_STOP replies before finalize (asynchronous stop);
+//   comments only.
 //
 // Versioning policy:
 //   * Use reserved <numbers> and reserved "names" to tombstone removed fields.
@@ -196,6 +198,8 @@ message Command {
   reserved "list_sport_presets", "create_sport_preset", "update_sport_preset", "delete_sport_preset";
 }
 
+// For RecordingControlCommand(RECORDING_STOP), status OK means finalize has
+// started, not that EOS/moov has completed; see RecordingAction.RECORDING_STOP.
 message CommandResponse {
   string correlation_id = 1;
   ResponseStatus status = 2;
@@ -390,7 +394,7 @@ message DeviceTelemetry {
 
   // True from the stop request until the MP4 is finalized (moov written,
   // summary saved). is_recording becomes false when finalizing starts; the
-  // two are never both true.
+  // two are never both true. Observable over BLE because STOP replies before finalize.
   optional bool is_finalizing = 17;
 
   // Startup preflight result; cameras are reported separately above.
@@ -547,6 +551,8 @@ enum MatchStatus {
 // 7. Recording / streaming
 // ===========================================================================
 
+// RECORDING_STOP is asynchronous: see RecordingAction.RECORDING_STOP for
+// reply timing and how the app learns the final result.
 message RecordingControlCommand {
   RecordingAction action = 1;
   // Optional record quality/fps, independent of the stream quality. Applied at
@@ -565,6 +571,13 @@ message RecordingControlCommand {
 enum RecordingAction {
   RECORDING_ACTION_UNKNOWN = 0;
   RECORDING_START = 1;
+  // Firmware replies OK as soon as finalize starts (SESSION_FINALIZING,
+  // is_recording=false, is_finalizing=true), without waiting for EOS/moov.
+  // The app polls GetTelemetryCommand or GetSessionSnapshotCommand until
+  // is_finalizing=false, then reads SessionSnapshotResponse.last_session
+  // (end_reason, file_valid, end_clock_seconds) for the final result.
+  // A second STOP while finalizing is idempotent (OK); start-class commands
+  // while finalizing are refused.
   RECORDING_STOP = 2;
   RECORDING_PAUSE = 3;
   RECORDING_RESUME = 4;
@@ -860,7 +873,7 @@ message SessionSnapshotResponse {
 
   // True from the stop request until the MP4 is finalized (moov written,
   // summary saved). is_recording becomes false when finalizing starts; the
-  // two are never both true.
+  // two are never both true. Observable over BLE because STOP replies before finalize.
   optional bool is_finalizing = 13;
 
   // Startup preflight result; cameras are reported separately above.
